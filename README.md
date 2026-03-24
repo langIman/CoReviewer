@@ -1,4 +1,5 @@
-# CoReviewer —— <sub>代码 Review，不该是一场对话。</sub>
+# CoReviewer
+### —— 代码 Review，不该是一场对话。
 
 
 
