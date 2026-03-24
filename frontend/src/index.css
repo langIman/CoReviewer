@@ -1,7 +1,29 @@
 @import "tailwindcss";
 @import "highlight.js/styles/github.css";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 html, body, #root {
   height: 100%;
   margin: 0;
+}
+
+/* 代码区禁用浏览器默认选中高亮，只保留自定义行高亮 */
+.code-view-area ::selection {
+  background: transparent;
+  color: inherit;
+}
+.code-view-area ::-moz-selection {
+  background: transparent;
+  color: inherit;
+}
+
+/* 去掉 React Flow 自带的节点选中框 */
+.react-flow {
+  --xy-node-boxshadow-selected-default: none;
+}
+
+/* 流程图内禁用文字选中 */
+.react-flow__node {
+  user-select: none;
 }

@@ -6,6 +6,33 @@ import json
 from backend.config import QWEN_API_KEY, QWEN_BASE_URL, QWEN_MODEL
 
 
+async def call_qwen(system_prompt: str, user_prompt: str) -> str:
+    """调用千问 API（非流式），返回完整文本。"""
+    if not QWEN_API_KEY:
+        return "错误：未配置 QWEN_API_KEY 环境变量。"
+
+    url = f"{QWEN_BASE_URL}/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {QWEN_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": QWEN_MODEL,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "stream": False,
+    }
+
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        resp = await client.post(url, json=payload, headers=headers)
+        if resp.status_code != 200:
+            return f"LLM API 错误 ({resp.status_code}): {resp.text}"
+        data = resp.json()
+        return data["choices"][0]["message"]["content"]
+
+
 async def stream_qwen(system_prompt: str, user_prompt: str) -> AsyncGenerator[str, None]:
     """调用千问 API（OpenAI 兼容格式），流式返回文本片段。"""
     if not QWEN_API_KEY:

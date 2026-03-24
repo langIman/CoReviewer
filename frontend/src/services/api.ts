@@ -1,4 +1,4 @@
-import type { FileData } from '../types'
+import type { FileData, ProjectData, FlowData } from '../types'
 
 export async function uploadFile(file: File): Promise<FileData> {
   const form = new FormData()
@@ -11,6 +11,57 @@ export async function uploadFile(file: File): Promise<FileData> {
   return res.json()
 }
 
+export async function uploadProject(files: FileList): Promise<ProjectData> {
+  const form = new FormData()
+  for (const file of Array.from(files)) {
+    // webkitRelativePath 提供相对路径（含文件夹名）
+    form.append('files', file, file.webkitRelativePath)
+  }
+  const res = await fetch('/api/upload-project', { method: 'POST', body: form })
+  if (!res.ok) {
+    const err = await res.json()
+    throw new Error(err.detail || 'Project upload failed')
+  }
+  return res.json()
+}
+
+export async function generateProjectSummary(): Promise<string> {
+  const res = await fetch('/api/project/summary', { method: 'POST' })
+  if (!res.ok) {
+    const err = await res.json()
+    throw new Error(err.detail || 'Summary generation failed')
+  }
+  const data = await res.json()
+  return data.summary
+}
+
+export async function visualizeProject(): Promise<FlowData> {
+  const res = await fetch('/api/visualize', { method: 'POST' })
+  if (!res.ok) {
+    const err = await res.json()
+    throw new Error(err.detail || 'Visualization failed')
+  }
+  return res.json()
+}
+
+export async function visualizeDetail(params: {
+  label: string
+  description: string
+  file?: string
+  line?: number
+}): Promise<FlowData> {
+  const res = await fetch('/api/visualize/detail', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  })
+  if (!res.ok) {
+    const err = await res.json()
+    throw new Error(err.detail || 'Detail generation failed')
+  }
+  return res.json()
+}
+
 export async function streamReview(
   params: {
     file_name: string
@@ -19,6 +70,7 @@ export async function streamReview(
     start_line: number
     end_line: number
     action: string
+    project_mode?: boolean
   },
   onChunk: (text: string) => void,
   onDone: () => void

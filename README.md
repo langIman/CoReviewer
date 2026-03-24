@@ -1,4 +1,4 @@
-# CoReviewer —— *代码 Review，不该是一场对话。*
+# 🤖CoReviewer🤖 —— *代码 Review，不该只是一场对话。*
 
 
 

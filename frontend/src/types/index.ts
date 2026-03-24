@@ -19,3 +19,44 @@ export interface ReviewResponse {
   loading: boolean
   timestamp: number
 }
+
+export interface ProjectFile {
+  path: string
+  content: string
+  line_count: number
+}
+
+export interface ProjectData {
+  project_name: string
+  files: ProjectFile[]
+}
+
+export type FlowNodeType = 'start' | 'end' | 'process' | 'decision'
+
+export interface FlowNode {
+  id: string
+  type: FlowNodeType
+  label: string
+  description: string
+  file?: string
+  line?: number
+  expandable?: boolean
+}
+
+export interface FlowEdge {
+  source: string
+  target: string
+  label?: string
+}
+
+export interface FlowData {
+  nodes: FlowNode[]
+  edges: FlowEdge[]
+}
+
+export interface FileTreeNode {
+  name: string
+  path: string
+  type: 'file' | 'directory'
+  children?: FileTreeNode[]
+}
