@@ -10,11 +10,12 @@ interface FlowTreeNavProps {
   focusedLabel: string | null
   onNavigate: (parentPath: string[], focusLabel?: string) => void
   onEnter: (path: string[]) => void
+  onRequestExpand: (node: FlowNode) => void
   expanding: Set<string>
 }
 
 function getCacheKey(node: FlowNode): string {
-  return `${node.label}::${node.file || ''}::${node.line || 0}`
+  return `${node.label}::${node.file || ''}::${node.symbol || ''}`
 }
 
 function TreeItem({
@@ -25,6 +26,7 @@ function TreeItem({
   parentPath,
   onNavigate,
   onEnter,
+  onRequestExpand,
   expanding,
   depth,
 }: {
@@ -35,6 +37,7 @@ function TreeItem({
   parentPath: string[]
   onNavigate: (parentPath: string[], focusLabel?: string) => void
   onEnter: (path: string[]) => void
+  onRequestExpand: (node: FlowNode) => void
   expanding: Set<string>
   depth: number
 }) {
@@ -56,15 +59,18 @@ function TreeItem({
     ? childData!.nodes.filter((n) => n.type === 'process' || n.type === 'decision')
     : []
 
-  // 单击：始终在父层聚焦此节点
+  // 单击：首次选中聚焦，再次单击已选中项则进入子图或触发加载
   const handleClick = () => {
-    onNavigate(parentPath, node.label)
-  }
-
-  // 双击：有子图则进入
-  const handleDoubleClick = () => {
-    if (hasChildren) {
-      onEnter([...parentPath, node.label])
+    if (isActive) {
+      if (hasChildren) {
+        // 已缓存 → 直接进入子图
+        onEnter([...parentPath, node.label])
+      } else if (node.expandable && !isLoading) {
+        // 可展开但未加载 → 触发加载
+        onRequestExpand(node)
+      }
+    } else {
+      onNavigate(parentPath, node.label)
     }
   }
 
@@ -80,7 +86,6 @@ function TreeItem({
         }`}
         style={{ paddingLeft: depth * 14 + 8 }}
         onClick={handleClick}
-        onDoubleClick={handleDoubleClick}
       >
         {hasChildren && childProcessNodes.length > 0 ? (
           <button
@@ -107,6 +112,7 @@ function TreeItem({
           parentPath={[...parentPath, node.label]}
           onNavigate={onNavigate}
           onEnter={onEnter}
+          onRequestExpand={onRequestExpand}
           expanding={expanding}
           depth={depth + 1}
         />
@@ -115,7 +121,7 @@ function TreeItem({
   )
 }
 
-export default function FlowTreeNav({ rootData, cache, currentPath, focusedLabel, onNavigate, onEnter, expanding }: FlowTreeNavProps) {
+export default function FlowTreeNav({ rootData, cache, currentPath, focusedLabel, onNavigate, onEnter, onRequestExpand, expanding }: FlowTreeNavProps) {
   const { t } = useLanguage()
   const { isDark } = useTheme()
 
@@ -153,6 +159,7 @@ export default function FlowTreeNav({ rootData, cache, currentPath, focusedLabel
             parentPath={overviewPath}
             onNavigate={onNavigate}
             onEnter={onEnter}
+            onRequestExpand={onRequestExpand}
             expanding={expanding}
             depth={1}
           />

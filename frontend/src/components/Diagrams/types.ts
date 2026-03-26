@@ -5,7 +5,9 @@ export interface DiagramNodeData {
   label: string
   description: string
   file?: string
-  line?: number
+  lineStart?: number
+  lineEnd?: number
+  symbol?: string
   expandable?: boolean
   selected?: boolean
 }

@@ -35,6 +35,8 @@ const locales: Record<Lang, Record<string, string>> = {
     'visualize.overview': '总览',
     'visualize.expanding': '展开子流程...',
     'visualize.directory': '目录',
+    'visualize.legendProcess': '不可展开节点',
+    'visualize.legendExpandable': '可展开节点',
   },
   en: {
     'app.title': 'CoReviewer',
@@ -70,6 +72,8 @@ const locales: Record<Lang, Record<string, string>> = {
     'visualize.overview': 'Overview',
     'visualize.expanding': 'Expanding...',
     'visualize.directory': 'Directory',
+    'visualize.legendProcess': 'Non-expandable',
+    'visualize.legendExpandable': 'Expandable',
   },
 }
 

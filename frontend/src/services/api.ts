@@ -48,7 +48,7 @@ export async function visualizeDetail(params: {
   label: string
   description: string
   file?: string
-  line?: number
+  symbol?: string
 }): Promise<FlowData> {
   const res = await fetch('/api/visualize/detail', {
     method: 'POST',

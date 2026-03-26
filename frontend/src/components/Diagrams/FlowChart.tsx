@@ -11,7 +11,7 @@ import {
   type Edge,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import type { FlowData } from '../../types'
+import type { FlowData, FlowNode } from '../../types'
 import { useReviewStore } from '../../store/useReviewStore'
 import { useTheme } from '../../i18n/ThemeContext'
 import { useLanguage } from '../../i18n/LanguageContext'
@@ -55,7 +55,7 @@ function FlowChartInner({ data: rootData }: { data: FlowData }) {
     for (let i = 1; i < path.length; i++) {
       const node = data.nodes.find((n) => n.label === path[i])
       if (!node) return null
-      const cacheKey = `${node.label}::${node.file || ''}::${node.line || 0}`
+      const cacheKey = `${node.label}::${node.file || ''}::${node.symbol || ''}`
       const cached = cacheRef.current.get(cacheKey)
       if (!cached) return null
       data = cached
@@ -75,7 +75,7 @@ function FlowChartInner({ data: rootData }: { data: FlowData }) {
   const buildNodes = (flowData: FlowData, selId: string | null): Node[] => {
     const pos = computeLayout(flowData)
     return flowData.nodes.map((n) => ({
-      id: n.id,
+      id: String(n.id),
       type: 'custom',
       position: pos[n.id] || { x: 0, y: 0 },
       data: {
@@ -83,24 +83,39 @@ function FlowChartInner({ data: rootData }: { data: FlowData }) {
         label: n.label,
         description: n.description,
         file: n.file,
-        line: n.line,
+        lineStart: n.lineStart,
+        lineEnd: n.lineEnd,
+        symbol: n.symbol,
         expandable: n.expandable,
         selected: n.id === selId,
       },
     }))
   }
 
-  const buildEdges = (flowData: FlowData): Edge[] =>
-    flowData.edges.map((e, i) => ({
-      id: `${e.source}-${e.target}-${i}`,
-      source: e.source,
-      target: e.target,
-      label: e.label || '',
-      animated: false,
-      markerEnd: { type: MarkerType.ArrowClosed, width: 15, height: 15 },
-      style: { stroke: isDark ? '#60a5fa' : '#3b82f6', strokeWidth: 1.5 },
-      labelStyle: { fontSize: 10, fill: isDark ? '#93c5fd' : '#3b82f6' },
-    }))
+  const buildEdges = (flowData: FlowData): Edge[] => {
+    // 找出所有 decision 节点 id，用于判断是否需要从右侧出边
+    const decisionIds = new Set(flowData.nodes.filter((n) => n.type === 'decision').map((n) => n.id))
+
+    return flowData.edges.map((e, i) => {
+      const isFromDecision = decisionIds.has(e.source)
+      // decision 节点的"否"分支从右侧 handle 出
+      const isNoEdge = isFromDecision && e.label === '否'
+
+      return {
+        id: `${e.source}-${e.target}-${i}`,
+        source: String(e.source),
+        target: String(e.target),
+        ...(isNoEdge ? { sourceHandle: 'no' } : {}),
+        label: e.label || '',
+        // 只有 decision 出边用 smoothstep（需要绕过其他节点），其余用默认 bezier
+        type: isFromDecision ? 'smoothstep' : 'default',
+        animated: false,
+        markerEnd: { type: MarkerType.ArrowClosed, width: 15, height: 15 },
+        style: { stroke: isDark ? '#60a5fa' : '#3b82f6', strokeWidth: 1.5 },
+        labelStyle: { fontSize: 10, fill: isDark ? '#93c5fd' : '#3b82f6' },
+      }
+    })
+  }
 
   const [nodes, setNodes] = useNodesState(buildNodes(currentData, null))
   const [edges, setEdges] = useEdgesState(buildEdges(currentData))
@@ -143,57 +158,26 @@ function FlowChartInner({ data: rootData }: { data: FlowData }) {
     [getNode, setCenter]
   )
 
-  // 单击/双击区分：延迟单击，双击时取消
-  const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  const handleNodeClick = useCallback(
-    (_: React.MouseEvent, node: Node) => {
-      // 先立即高亮（视觉反馈不延迟）
-      selectNode(node.id)
-      setFocusedLabel((node.data as { label: string }).label)
-
-      // 延迟执行代码跳转，给双击机会取消
-      if (clickTimerRef.current) clearTimeout(clickTimerRef.current)
-      clickTimerRef.current = setTimeout(() => {
-        clickTimerRef.current = null
-        const { file, line } = node.data as { file?: string; line?: number }
-        if (file && line) {
-          selectProjectFile(file)
-          setTimeout(() => setHighlightLines({ start: line, end: line }), 100)
-        }
-      }, 250)
-    },
-    [selectNode, selectProjectFile, setHighlightLines]
-  )
-
-  const handlePaneClick = useCallback(() => {
-    selectNode(null)
-    setFocusedLabel(null)
-  }, [selectNode])
-
-  // 双击展开节点
-  const handleNodeDoubleClick = useCallback(
-    (_: React.MouseEvent, node: Node) => {
-      // 取消单击的延迟动作
-      if (clickTimerRef.current) {
-        clearTimeout(clickTimerRef.current)
-        clickTimerRef.current = null
-      }
-
-      const d = node.data as { expandable?: boolean; label: string; description: string; file?: string; line?: number }
+  // 进入子图（已选中节点再次单击时调用）
+  const enterSubFlow = useCallback(
+    (node: Node) => {
+      const d = node.data as { expandable?: boolean; label: string; description: string; file?: string; symbol?: string }
       if (!d.expandable) return
 
-      const cacheKey = `${d.label}::${d.file || ''}::${d.line || 0}`
+      const cacheKey = `${d.label}::${d.file || ''}::${d.symbol || ''}`
+      const newPath = [...navPath, d.label]
 
+      // 已缓存 → 直接进入
       const cached = cacheRef.current.get(cacheKey)
       if (cached) {
-        setNavPath((prev) => [...prev, d.label])
+        setNavPath(newPath)
         setCurrentData(cached)
         setSelectedNodeId(null)
         setFocusedLabel(null)
         return
       }
 
+      // 正在加载中 → 忽略
       if (expanding.has(cacheKey)) return
       setExpanding((prev) => new Set([...prev, cacheKey]))
 
@@ -201,17 +185,19 @@ function FlowChartInner({ data: rootData }: { data: FlowData }) {
         label: d.label,
         description: d.description,
         file: d.file,
-        line: d.line,
+        symbol: d.symbol,
       })
         .then((subData) => {
           cacheRef.current.set(cacheKey, subData)
           setCacheVersion((v) => v + 1)
-          setNavPath((prev) => [...prev, d.label])
+          setNavPath(newPath)
           setCurrentData(subData)
           setSelectedNodeId(null)
           setFocusedLabel(null)
         })
-        .catch(() => {})
+        .catch((err) => {
+          console.warn('Failed to load sub-flow:', d.label, err)
+        })
         .finally(() => {
           setExpanding((prev) => {
             const next = new Set(prev)
@@ -220,8 +206,34 @@ function FlowChartInner({ data: rootData }: { data: FlowData }) {
           })
         })
     },
-    [expanding]
+    [expanding, navPath]
   )
+
+  const handleNodeClick = useCallback(
+    (_: React.MouseEvent, node: Node) => {
+      const d = node.data as { expandable?: boolean; label: string; file?: string; lineStart?: number; lineEnd?: number }
+
+      // 再次单击已选中的节点 → 进入子图
+      if (node.id === selectedNodeId && d.expandable) {
+        enterSubFlow(node)
+        return
+      }
+
+      // 首次单击 → 选中 + 跳转代码
+      selectNode(node.id)
+      setFocusedLabel(d.label)
+      if (d.file && d.lineStart) {
+        selectProjectFile(d.file)
+        setTimeout(() => setHighlightLines({ start: d.lineStart!, end: d.lineEnd ?? d.lineStart! }), 100)
+      }
+    },
+    [selectedNodeId, enterSubFlow, selectNode, selectProjectFile, setHighlightLines]
+  )
+
+  const handlePaneClick = useCallback(() => {
+    selectNode(null)
+    setFocusedLabel(null)
+  }, [selectNode])
 
   // 树形目录：单击聚焦
   const handleTreeNavigate = useCallback(
@@ -250,7 +262,7 @@ function FlowChartInner({ data: rootData }: { data: FlowData }) {
     [selectNode, focusNode] // eslint-disable-line react-hooks/exhaustive-deps
   )
 
-  // 树形目录：双击进入
+  // 树形目录：进入已缓存的子图
   const handleTreeEnter = useCallback(
     (path: string[]) => {
       const data = resolveData(path)
@@ -261,6 +273,43 @@ function FlowChartInner({ data: rootData }: { data: FlowData }) {
       setFocusedLabel(null)
     },
     [] // eslint-disable-line react-hooks/exhaustive-deps
+  )
+
+  // 树形目录：请求加载未缓存的可展开节点
+  const handleTreeRequestExpand = useCallback(
+    (node: FlowNode) => {
+      const cacheKey = `${node.label}::${node.file || ''}::${node.symbol || ''}`
+      if (cacheRef.current.has(cacheKey) || expanding.has(cacheKey)) return
+
+      const newPath = [...navPath, node.label]
+      setExpanding((prev) => new Set([...prev, cacheKey]))
+
+      visualizeDetail({
+        label: node.label,
+        description: node.description,
+        file: node.file,
+        symbol: node.symbol,
+      })
+        .then((subData) => {
+          cacheRef.current.set(cacheKey, subData)
+          setCacheVersion((v) => v + 1)
+          setNavPath(newPath)
+          setCurrentData(subData)
+          setSelectedNodeId(null)
+          setFocusedLabel(null)
+        })
+        .catch((err) => {
+          console.warn('Failed to load sub-flow:', node.label, err)
+        })
+        .finally(() => {
+          setExpanding((prev) => {
+            const next = new Set(prev)
+            next.delete(cacheKey)
+            return next
+          })
+        })
+    },
+    [expanding, navPath]
   )
 
   const toggleFullscreen = useCallback(() => {
@@ -306,7 +355,19 @@ function FlowChartInner({ data: rootData }: { data: FlowData }) {
           </span>
         )}
 
-        <div className="ml-auto flex items-center gap-1">
+        {/* 图例 */}
+        <div className="ml-auto flex items-center gap-3 mr-3">
+          <span className="flex items-center gap-1.5 text-[10px] text-gray-500 dark:text-gray-400">
+            <span className="inline-block w-2.5 h-2.5 rounded-sm bg-blue-500" />
+            {t('visualize.legendProcess')}
+          </span>
+          <span className="flex items-center gap-1.5 text-[10px] text-gray-500 dark:text-gray-400">
+            <span className="inline-block w-2.5 h-2.5 rounded-sm bg-purple-500" />
+            {t('visualize.legendExpandable')}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-1">
           <button onClick={() => zoomIn()} className="p-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-500 dark:text-gray-400" title="Zoom in">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           </button>
@@ -343,6 +404,7 @@ function FlowChartInner({ data: rootData }: { data: FlowData }) {
             focusedLabel={focusedLabel}
             onNavigate={handleTreeNavigate}
             onEnter={handleTreeEnter}
+            onRequestExpand={handleTreeRequestExpand}
             expanding={expanding}
           />
         </div>
@@ -366,7 +428,6 @@ function FlowChartInner({ data: rootData }: { data: FlowData }) {
             edges={edges}
             nodeTypes={nodeTypes}
             onNodeClick={handleNodeClick}
-            onNodeDoubleClick={handleNodeDoubleClick}
             onPaneClick={handlePaneClick}
             fitView
             fitViewOptions={{ padding: 0.3, minZoom: 0.3 }}
