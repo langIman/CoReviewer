@@ -65,6 +65,10 @@ async def upload_project(files: Annotated[list[UploadFile], File()]):
 
     store_project(project_name, project_files)
 
+    # Invalidate AST call graph cache for the new project
+    from backend.routers.analyze import invalidate_graph_cache
+    invalidate_graph_cache()
+
     return ProjectUploadResponse(project_name=project_name, files=file_infos)
 
 

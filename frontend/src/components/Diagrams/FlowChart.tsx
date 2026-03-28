@@ -219,15 +219,24 @@ function FlowChartInner({ data: rootData }: { data: FlowData }) {
         return
       }
 
-      // 首次单击 → 选中 + 跳转代码
+      // 首次单击 → 选中 + 跳转到调用位置（call site）
       selectNode(node.id)
       setFocusedLabel(d.label)
-      if (d.file && d.lineStart) {
+
+      // 找指向该节点的入边，跳转到 caller 调用该函数的那一行
+      const incoming = currentData.edges.filter(e => String(e.target) === node.id)
+      const edge = incoming[0]
+
+      if (edge?.call_file && edge?.call_line) {
+        selectProjectFile(edge.call_file)
+        setTimeout(() => setHighlightLines({ start: edge.call_line!, end: edge.call_line! }), 100)
+      } else if (d.file && d.lineStart) {
+        // fallback：入口节点无上游调用，跳定义处
         selectProjectFile(d.file)
         setTimeout(() => setHighlightLines({ start: d.lineStart!, end: d.lineEnd ?? d.lineStart! }), 100)
       }
     },
-    [selectedNodeId, enterSubFlow, selectNode, selectProjectFile, setHighlightLines]
+    [selectedNodeId, enterSubFlow, selectNode, selectProjectFile, setHighlightLines, currentData]
   )
 
   const handlePaneClick = useCallback(() => {

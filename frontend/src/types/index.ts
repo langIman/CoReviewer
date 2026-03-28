@@ -49,6 +49,8 @@ export interface FlowEdge {
   source: string
   target: string
   label?: string
+  call_line?: number
+  call_file?: string
 }
 
 export interface FlowData {

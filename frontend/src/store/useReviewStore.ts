@@ -68,6 +68,7 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
     set({
       file: { filename: pf.path, content: pf.content, line_count: pf.line_count },
       selection: null,
+      highlightLines: null,
     })
   },
 

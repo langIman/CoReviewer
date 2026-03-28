@@ -62,6 +62,72 @@ export async function visualizeDetail(params: {
   return res.json()
 }
 
+// --- AST-based analysis API (P1 + P2) ---
+
+export interface AnalyzeGraphResponse {
+  modules: Record<string, unknown>
+  definitions: Record<string, unknown>
+  edges: unknown[]
+  flow: {
+    module_level: FlowData
+    function_level: Record<string, FlowData>
+  }
+}
+
+export interface AnnotateResponse {
+  status: 'ok' | 'fallback'
+  error?: string
+  annotations: Record<string, { label: string; description: string }>
+}
+
+/** Pure AST analysis — returns call graph + FlowData in milliseconds */
+export async function analyzeGraph(): Promise<AnalyzeGraphResponse> {
+  const res = await fetch('/api/analyze/graph', { method: 'POST' })
+  if (!res.ok) {
+    const err = await res.json()
+    throw new Error(err.detail || 'Graph analysis failed')
+  }
+  return res.json()
+}
+
+/** LLM semantic annotation — returns Chinese labels for each function */
+export async function analyzeAnnotate(modules?: string[]): Promise<AnnotateResponse> {
+  const res = await fetch('/api/analyze/annotate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(modules ? { modules } : {}),
+  })
+  if (!res.ok) {
+    const err = await res.json()
+    throw new Error(err.detail || 'Annotation failed')
+  }
+  return res.json()
+}
+
+/** Expand a function's internal logic via LLM */
+export async function analyzeDetail(qualifiedName: string): Promise<FlowData> {
+  const res = await fetch('/api/analyze/detail', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ qualified_name: qualifiedName }),
+  })
+  if (!res.ok) {
+    const err = await res.json()
+    throw new Error(err.detail || 'Detail analysis failed')
+  }
+  return res.json()
+}
+
+/** Semantic overview flowchart from AST skeleton + LLM (same format as old visualize) */
+export async function analyzeOverview(): Promise<FlowData> {
+  const res = await fetch('/api/analyze/overview', { method: 'POST' })
+  if (!res.ok) {
+    const err = await res.json()
+    throw new Error(err.detail || 'Overview generation failed')
+  }
+  return res.json()
+}
+
 export async function streamReview(
   params: {
     file_name: string
