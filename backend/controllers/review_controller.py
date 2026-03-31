@@ -1,20 +1,21 @@
+"""Controller for code review streaming endpoint."""
+
 import json
 
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 
 from backend.models.schemas import ReviewRequest, ProjectFileInfo
-from backend.services.prompts.review import build_review_prompt
-from backend.services.llm import stream_qwen
-from backend.services.import_analysis import get_related_files
-from backend.services.file_service import get_project_files
+from backend.services.llm.prompts.review import build_review_prompt
+from backend.services.llm.llm_service import stream_qwen
+from backend.services.analysis.import_analysis import get_related_files
+from backend.dao.file_store import get_project_files
 
 router = APIRouter()
 
 
 @router.post("/api/review")
 async def review_code(req: ReviewRequest):
-    # 项目模式下自动解析 import 并注入相关文件
     if req.project_mode and not req.related_files:
         project_files = get_project_files()
         if project_files:

@@ -1,15 +1,19 @@
+"""Controller for file upload and project management endpoints."""
+
 from pathlib import PurePosixPath
 from typing import Annotated
 
 from fastapi import APIRouter, UploadFile, HTTPException, File
+
 from backend.config import ALLOWED_EXTENSIONS, MAX_PROJECT_FILES
 from backend.models.schemas import FileResponse, ProjectFileInfo, ProjectUploadResponse, ProjectSummaryResponse
-from backend.services.file_service import (
+from backend.dao.file_store import (
     validate_file, store_file, store_project,
     get_project_files, get_project_name, set_project_summary,
 )
-from backend.services.llm import call_qwen
-from backend.services.prompts.summary import build_summary_prompt
+from backend.dao.graph_cache import invalidate_cache
+from backend.services.llm.llm_service import call_qwen
+from backend.services.llm.prompts.summary import build_summary_prompt
 
 router = APIRouter()
 
@@ -64,10 +68,7 @@ async def upload_project(files: Annotated[list[UploadFile], File()]):
     project_name = first_parts[0] if first_parts else "project"
 
     store_project(project_name, project_files)
-
-    # Invalidate AST call graph cache for the new project
-    from backend.routers.analyze import invalidate_graph_cache
-    invalidate_graph_cache()
+    invalidate_cache()
 
     return ProjectUploadResponse(project_name=project_name, files=file_infos)
 

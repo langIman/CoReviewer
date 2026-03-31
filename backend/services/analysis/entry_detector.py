@@ -1,14 +1,13 @@
-"""Detect entry points in a Python project's call graph.
-
-Detection rules (in priority order):
-1. Functions decorated with route decorators (@app.get, @router.post, etc.)
-2. Functions decorated with CLI decorators (@click.command, @app.command, etc.)
-3. Functions inside files with `if __name__ == "__main__":` guard
-4. Top-level functions not called by any other function (orphan heuristic)
+"""检测Python项目调用图中的入口点。
+检测规则（按优先级排序）：
+1. 带有路由修饰符（如@app.get、@router.post等）的函数 
+2. 带有CLI修饰符（如@click.command、@app.command等）的函数 
+3. 文件中带有`if __name__ == "__main__":`保护语句的函数 
+4. 未被任何其他函数调用的顶级函数（孤立函数启发式）
 """
 
 import ast
-from backend.services.call_graph import CallGraph
+from backend.models.graph_models import CallGraph
 
 
 # ---------------------------------------------------------------------------

@@ -1,109 +1,20 @@
-"""AST-based call graph extraction for Python projects.
-
-Builds a complete call graph by:
-1. Parsing all .py files with ast.parse()
-2. Extracting function/class/method definitions (SymbolDef)
-3. Extracting call relationships (CallEdge)
-4. Resolving callee names to project-internal definitions via import analysis
-5. Building module-level dependency graph from imports
+"""针对Python项目的基于AST的调用图提取。
+通过以下步骤构建完整的调用图：
+1. 使用ast.parse()解析所有.py文件 
+2. 提取函数/类/方法定义（SymbolDef） 
+3. 提取调用关系（CallEdge） 
+4. 通过导入分析将调用目标名称解析为项目内部定义 
+5. 根据导入构建模块级依赖图
 """
 
 import ast
-from dataclasses import dataclass, field
 from pathlib import PurePosixPath
 
-from backend.services.import_analysis import (
+from backend.models.graph_models import CallEdge, CallGraph, ModuleNode, SymbolDef
+from backend.services.analysis.import_analysis import (
     extract_imports,
     resolve_imports_to_project_files,
 )
-
-
-@dataclass
-class SymbolDef:
-    """A function, class, or method definition in the project."""
-
-    qualified_name: str   # "backend/routers/file.py::upload_file"
-    name: str             # "upload_file"
-    kind: str             # "function" | "async_function" | "class" | "method"
-    file: str             # "backend/routers/file.py"
-    line_start: int
-    line_end: int
-    decorators: list[str] = field(default_factory=list)
-    docstring: str | None = None
-    params: list[str] = field(default_factory=list)
-    is_entry: bool = False
-
-
-@dataclass
-class CallEdge:
-    """A call from one function to another."""
-
-    caller: str            # qualified_name of caller
-    callee_name: str       # raw function name being called
-    callee_resolved: str | None = None  # resolved qualified_name (if in project)
-    file: str = ""         # caller's file
-    line: int = 0          # call site line number
-    call_type: str = "direct"  # "direct" | "attribute"
-
-
-@dataclass
-class ModuleNode:
-    """A module (file) in the module-level dependency graph."""
-
-    path: str
-    line_count: int = 0
-    symbol_count: int = 0
-    imports: list[str] = field(default_factory=list)  # paths of imported modules
-
-
-@dataclass
-class CallGraph:
-    """Complete call graph of a project."""
-
-    definitions: dict[str, SymbolDef] = field(default_factory=dict)
-    edges: list[CallEdge] = field(default_factory=list)
-    modules: dict[str, ModuleNode] = field(default_factory=dict)
-    entry_points: list[str] = field(default_factory=list)
-
-    def to_dict(self) -> dict:
-        """Serialize to JSON-friendly dict for API response."""
-        return {
-            "modules": {
-                path: {
-                    "path": m.path,
-                    "line_count": m.line_count,
-                    "symbol_count": m.symbol_count,
-                    "imports": m.imports,
-                }
-                for path, m in self.modules.items()
-            },
-            "definitions": {
-                qname: {
-                    "qualified_name": d.qualified_name,
-                    "name": d.name,
-                    "kind": d.kind,
-                    "file": d.file,
-                    "line_start": d.line_start,
-                    "line_end": d.line_end,
-                    "decorators": d.decorators,
-                    "docstring": d.docstring,
-                    "params": d.params,
-                    "is_entry": d.is_entry,
-                }
-                for qname, d in self.definitions.items()
-            },
-            "edges": [
-                {
-                    "caller": e.caller,
-                    "callee_name": e.callee_name,
-                    "callee_resolved": e.callee_resolved,
-                    "file": e.file,
-                    "line": e.line,
-                    "call_type": e.call_type,
-                }
-                for e in self.edges
-            ],
-        }
 
 
 # ---------------------------------------------------------------------------
@@ -280,7 +191,7 @@ def _build_import_name_map(
 ) -> dict[str, str]:
     """Build a mapping: imported_name -> qualified_name in project.
 
-    E.g. if file does `from backend.services.llm import call_qwen`,
+    E.g. if file does `from backend.services.llm.llm_service import call_qwen`,
     maps "call_qwen" -> "backend/services/llm.py::call_qwen".
     """
     name_map: dict[str, str] = {}

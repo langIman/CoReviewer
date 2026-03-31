@@ -3,7 +3,11 @@ load_dotenv()
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from backend.routers import file, review, visualize, analyze
+from backend.controllers import (
+    file_controller,
+    review_controller,
+    analyze_controller,
+)
 
 app = FastAPI(title="CoReviewer", version="0.1.0")
 
@@ -15,10 +19,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(file.router)
-app.include_router(review.router)
-app.include_router(visualize.router)
-app.include_router(analyze.router)
+app.include_router(file_controller.router)
+app.include_router(review_controller.router)
+app.include_router(analyze_controller.router)
 
 
 @app.get("/api/health")

@@ -1,5 +1,5 @@
 from backend.models.schemas import ReviewRequest
-from backend.services.file_service import get_project_summary
+from backend.dao.file_store import get_project_summary
 
 SYSTEM_PROMPT = """你是一位资深代码审查专家，擅长 Python 开发。
 你的回答应当结构清晰、直击要点，使用中文回答。使用 Markdown 格式。

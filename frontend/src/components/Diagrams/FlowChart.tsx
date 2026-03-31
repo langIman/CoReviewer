@@ -15,7 +15,7 @@ import type { FlowData, FlowNode } from '../../types'
 import { useReviewStore } from '../../store/useReviewStore'
 import { useTheme } from '../../i18n/ThemeContext'
 import { useLanguage } from '../../i18n/LanguageContext'
-import { visualizeDetail } from '../../services/api'
+import { analyzeDetail } from '../../services/api'
 import { computeLayout } from './layout'
 import CustomNode from './CustomNode'
 import FlowTreeNav from './FlowTreeNav'
@@ -181,12 +181,10 @@ function FlowChartInner({ data: rootData }: { data: FlowData }) {
       if (expanding.has(cacheKey)) return
       setExpanding((prev) => new Set([...prev, cacheKey]))
 
-      visualizeDetail({
-        label: d.label,
-        description: d.description,
-        file: d.file,
-        symbol: d.symbol,
-      })
+      const qualifiedName = d.file && d.symbol ? `${d.file}::${d.symbol}` : ''
+      if (!qualifiedName) return
+
+      analyzeDetail(qualifiedName)
         .then((subData) => {
           cacheRef.current.set(cacheKey, subData)
           setCacheVersion((v) => v + 1)
@@ -293,12 +291,10 @@ function FlowChartInner({ data: rootData }: { data: FlowData }) {
       const newPath = [...navPath, node.label]
       setExpanding((prev) => new Set([...prev, cacheKey]))
 
-      visualizeDetail({
-        label: node.label,
-        description: node.description,
-        file: node.file,
-        symbol: node.symbol,
-      })
+      const qualifiedName = node.file && node.symbol ? `${node.file}::${node.symbol}` : ''
+      if (!qualifiedName) return
+
+      analyzeDetail(qualifiedName)
         .then((subData) => {
           cacheRef.current.set(cacheKey, subData)
           setCacheVersion((v) => v + 1)
