@@ -3,7 +3,7 @@ import type { FileData, ProjectData, FlowData } from '../types'
 export async function uploadFile(file: File): Promise<FileData> {
   const form = new FormData()
   form.append('file', file)
-  const res = await fetch('/api/upload', { method: 'POST', body: form })
+  const res = await fetch('/api/file/upload', { method: 'POST', body: form })
   if (!res.ok) {
     const err = await res.json()
     throw new Error(err.detail || 'Upload failed')
@@ -17,7 +17,7 @@ export async function uploadProject(files: FileList): Promise<ProjectData> {
     // webkitRelativePath 提供相对路径（含文件夹名）
     form.append('files', file, file.webkitRelativePath)
   }
-  const res = await fetch('/api/upload-project', { method: 'POST', body: form })
+  const res = await fetch('/api/file/upload-project', { method: 'POST', body: form })
   if (!res.ok) {
     const err = await res.json()
     throw new Error(err.detail || 'Project upload failed')
@@ -26,7 +26,7 @@ export async function uploadProject(files: FileList): Promise<ProjectData> {
 }
 
 export async function generateProjectSummary(): Promise<string> {
-  const res = await fetch('/api/project/summary', { method: 'POST' })
+  const res = await fetch('/api/file/project/summary', { method: 'POST' })
   if (!res.ok) {
     const err = await res.json()
     throw new Error(err.detail || 'Summary generation failed')
@@ -62,31 +62,9 @@ export async function visualizeDetail(params: {
   return res.json()
 }
 
-// --- AST-based analysis API (P1 + P2) ---
-
-export interface AnalyzeGraphResponse {
-  modules: Record<string, unknown>
-  definitions: Record<string, unknown>
-  edges: unknown[]
-  flow: {
-    module_level: FlowData
-    function_level: Record<string, FlowData>
-  }
-}
-
-/** Pure AST analysis — returns call graph + FlowData in milliseconds */
-export async function analyzeGraph(): Promise<AnalyzeGraphResponse> {
-  const res = await fetch('/api/analyze/graph', { method: 'POST' })
-  if (!res.ok) {
-    const err = await res.json()
-    throw new Error(err.detail || 'Graph analysis failed')
-  }
-  return res.json()
-}
-
 /** Expand a function's internal logic via LLM */
 export async function analyzeDetail(qualifiedName: string): Promise<FlowData> {
-  const res = await fetch('/api/analyze/detail', {
+  const res = await fetch('/api/graph/detail', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ qualified_name: qualifiedName }),
@@ -100,7 +78,7 @@ export async function analyzeDetail(qualifiedName: string): Promise<FlowData> {
 
 /** Semantic overview flowchart from AST skeleton + LLM (same format as old visualize) */
 export async function analyzeOverview(): Promise<FlowData> {
-  const res = await fetch('/api/analyze/overview', { method: 'POST' })
+  const res = await fetch('/api/graph/overview', { method: 'POST' })
   if (!res.ok) {
     const err = await res.json()
     throw new Error(err.detail || 'Overview generation failed')

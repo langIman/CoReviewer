@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react'
 import { useReviewStore } from '../store/useReviewStore'
-import { uploadFile, uploadProject, generateProjectSummary, analyzeGraph, analyzeOverview } from '../services/api'
+import { uploadFile, uploadProject, generateProjectSummary, analyzeOverview } from '../services/api'
 import { useLanguage } from '../i18n/LanguageContext'
 import { useTheme } from '../i18n/ThemeContext'
 
@@ -60,19 +60,6 @@ export default function UploadBar() {
       timestamp: Date.now(),
     })
     try {
-      // Step 1: Show AST skeleton instantly (module-level call graph)
-      analyzeGraph()
-        .then((graphData) => {
-          const skeleton = graphData.flow.module_level
-          // Only show skeleton if LLM hasn't finished yet
-          updateResponseContent(id, JSON.stringify(skeleton))
-        })
-        .catch(() => {
-          // Skeleton failed — will wait for LLM overview
-        })
-
-      // Step 2: Generate semantic flowchart via LLM (same quality as before)
-      // Uses AST skeleton as input instead of full code = fewer tokens
       const overviewData = await analyzeOverview()
       updateResponseContent(id, JSON.stringify(overviewData))
       setResponseDone(id)

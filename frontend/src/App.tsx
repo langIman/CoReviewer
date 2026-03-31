@@ -84,7 +84,7 @@ export default function App() {
           for (const { path, file } of files) {
             form.append('files', file, path)
           }
-          const res = await fetch('/api/upload-project', { method: 'POST', body: form })
+          const res = await fetch('/api/file/upload-project', { method: 'POST', body: form })
           if (!res.ok) {
             const err = await res.json()
             throw new Error(err.detail || t('upload.projectFailed'))

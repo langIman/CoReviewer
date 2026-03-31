@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from backend.controllers import (
     file_controller,
     review_controller,
-    analyze_controller,
+    graph_controller,
 )
 
 app = FastAPI(title="CoReviewer", version="0.1.0")
@@ -21,7 +21,7 @@ app.add_middleware(
 
 app.include_router(file_controller.router)
 app.include_router(review_controller.router)
-app.include_router(analyze_controller.router)
+app.include_router(graph_controller.router)
 
 
 @app.get("/api/health")

@@ -10,16 +10,16 @@ from backend.services.file_service import upload_single_file, upload_project_fil
 router = APIRouter()
 
 
-@router.post("/api/upload", response_model=FileResponse)
+@router.post("/api/file/upload", response_model=FileResponse)
 async def upload_file(file: UploadFile):
     return await upload_single_file(file)
 
 
-@router.post("/api/upload-project", response_model=ProjectUploadResponse)
+@router.post("/api/file/upload-project", response_model=ProjectUploadResponse)
 async def upload_project(files: Annotated[list[UploadFile], File()]):
     return await upload_project_files(files)
 
 
-@router.post("/api/project/summary", response_model=ProjectSummaryResponse)
+@router.post("/api/file/project/summary", response_model=ProjectSummaryResponse)
 async def get_project_summary():
     return await generate_project_summary()
