@@ -9,7 +9,10 @@
       "Bash(cp routers/analyze.py services/old/routers/analyze.py)",
       "Bash(cp services/prompts/annotate.py services/old/prompts/annotate.py)",
       "Bash(cp services/prompts/visualize.py services/old/prompts/visualize.py)",
-      "Bash(cp services/symbol_resolver.py services/old/symbol_resolver.py)"
+      "Bash(cp services/symbol_resolver.py services/old/symbol_resolver.py)",
+      "Bash(xargs ls:*)",
+      "Bash(python -c \"from backend.services.agents.lead import generate_overview_with_agents; print\\(''All imports OK''\\)\")",
+      "Bash(python3 -c \"from backend.services.agents.lead import generate_overview_with_agents; print\\(''All imports OK''\\)\")"
     ],
     "additionalDirectories": [
       "/root/.claude/plans"

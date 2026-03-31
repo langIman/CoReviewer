@@ -3,17 +3,11 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from backend.dao.graph_cache import get_or_build_graph
-from backend.services.flow_service import build_flow_data
+from backend.utils.analysis.ast_service import get_or_build_ast
+from backend.utils.data_format import build_flow_data
 from backend.services.overview_service import generate_overview
 from backend.services.detail_service import generate_detail
-from backend.services.annotate_service import annotate
-
 router = APIRouter()
-
-
-class AnnotateRequest(BaseModel):
-    modules: list[str] | None = None
 
 
 class FunctionDetailRequest(BaseModel):
@@ -23,7 +17,7 @@ class FunctionDetailRequest(BaseModel):
 @router.post("/api/analyze/graph")
 async def analyze_graph():
     """Pure AST analysis — returns call graph + FlowData in milliseconds."""
-    graph, _ = get_or_build_graph()
+    graph, _ = get_or_build_ast()
     return {**graph.to_dict(), "flow": build_flow_data(graph)}
 
 
@@ -38,9 +32,3 @@ async def analyze_detail(req: FunctionDetailRequest):
     """Expand a function's internal logic into a flowchart."""
     return await generate_detail(req.qualified_name)
 
-
-@router.post("/api/analyze/annotate")
-async def analyze_annotate(req: AnnotateRequest | None = None):
-    """LLM semantic annotation of call graph nodes."""
-    modules = req.modules if req else None
-    return await annotate(modules)

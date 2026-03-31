@@ -7,7 +7,7 @@
 """
 
 import ast
-from backend.models.graph_models import CallGraph
+from backend.models.graph_models import ProjectAST
 
 
 # ---------------------------------------------------------------------------
@@ -76,7 +76,7 @@ def _is_name_main_pair(left: ast.expr, right: ast.expr | None) -> bool:
 # ---------------------------------------------------------------------------
 
 def detect_entry_points(
-    graph: CallGraph,
+    graph: ProjectAST,
     project_files: dict[str, str],
 ) -> list[str]:
     """Detect entry points and mark them in the call graph.

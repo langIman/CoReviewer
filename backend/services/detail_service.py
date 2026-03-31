@@ -8,14 +8,14 @@ import json
 
 from fastapi import HTTPException
 
-from backend.dao.graph_cache import get_or_build_graph
-from backend.models.graph_models import CallGraph, SymbolDef
+from backend.utils.analysis.ast_service import get_or_build_ast
+from backend.models.graph_models import ProjectAST, SymbolDef
 from backend.services.llm.llm_service import call_qwen
-from backend.services.flow_service import parse_llm_json, normalize_flow_data
+from backend.utils.data_format import parse_llm_json, normalize_flow_data
 from backend.services.llm.prompts.annotate import build_function_detail_prompt
 
 
-def find_definition(qualified_name: str, graph: CallGraph) -> SymbolDef | None:
+def find_definition(qualified_name: str, graph: ProjectAST) -> SymbolDef | None:
     """Find a SymbolDef by qualified_name with fuzzy fallback.
 
     Handles cases where the frontend sends "main.py::register" but the
@@ -46,7 +46,7 @@ async def generate_detail(qualified_name: str) -> dict:
 
     Returns FlowData {nodes, edges} for the frontend.
     """
-    graph, project_files = get_or_build_graph()
+    graph, project_files = get_or_build_ast()
 
     defn = find_definition(qualified_name, graph)
     if not defn:

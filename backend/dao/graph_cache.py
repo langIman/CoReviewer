@@ -1,36 +1,33 @@
-"""CallGraph cache management.
+"""ProjectAST 纯缓存。
 
-Caches the built CallGraph to avoid re-parsing on every request.
-Invalidated when a new project is uploaded.
+只负责存取和失效，不含构建逻辑。
 """
 
-from backend.models.graph_models import CallGraph
-from backend.services.analysis.call_graph import build_call_graph
-from backend.services.analysis.entry_detector import detect_entry_points
-from backend.dao.file_store import get_project_files
+from backend.models.graph_models import ProjectAST
 
-_cached_graph: CallGraph | None = None
+_cached_ast: ProjectAST | None = None
 _cached_project_files: dict[str, str] | None = None
 
 
-def get_or_build_graph() -> tuple[CallGraph, dict[str, str]]:
-    """Get cached graph or build a new one."""
-    global _cached_graph, _cached_project_files
-    project_files = get_project_files()
-    if not project_files:
-        from fastapi import HTTPException
-        raise HTTPException(status_code=400, detail="No project loaded")
+def get_cached() -> ProjectAST:
+    """返回缓存的 ProjectAST（调用前应先检查 is_cache_valid）。"""
+    return _cached_ast  # type: ignore
 
-    if _cached_graph is None or _cached_project_files is not project_files:
-        _cached_graph = build_call_graph(project_files)
-        detect_entry_points(_cached_graph, project_files)
-        _cached_project_files = project_files
 
-    return _cached_graph, project_files
+def set_cached(ast_model: ProjectAST, project_files: dict[str, str]) -> None:
+    """写入缓存。"""
+    global _cached_ast, _cached_project_files
+    _cached_ast = ast_model
+    _cached_project_files = project_files
+
+
+def is_cache_valid(project_files: dict[str, str]) -> bool:
+    """缓存是否有效（同一份 project_files 且已构建）。"""
+    return _cached_ast is not None and _cached_project_files is project_files
 
 
 def invalidate_cache() -> None:
-    """Call when project changes (new upload)."""
-    global _cached_graph, _cached_project_files
-    _cached_graph = None
+    """失效缓存（上传新项目时调用）。"""
+    global _cached_ast, _cached_project_files
+    _cached_ast = None
     _cached_project_files = None

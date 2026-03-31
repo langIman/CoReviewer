@@ -10,8 +10,8 @@
 import ast
 from pathlib import PurePosixPath
 
-from backend.models.graph_models import CallEdge, CallGraph, ModuleNode, SymbolDef
-from backend.services.analysis.import_analysis import (
+from backend.models.graph_models import CallEdge, ProjectAST, ModuleNode, SymbolDef
+from backend.utils.analysis.import_analysis import (
     extract_imports,
     resolve_imports_to_project_files,
 )
@@ -272,15 +272,15 @@ def _resolve_call_edges(
 # Public API
 # ---------------------------------------------------------------------------
 
-def build_call_graph(project_files: dict[str, str]) -> CallGraph:
+def build_call_graph(project_files: dict[str, str]) -> ProjectAST:
     """Build a complete call graph from project source files.
 
-    Returns a CallGraph with:
+    Returns a ProjectAST with:
     - definitions: all function/class/method definitions
     - edges: all call relationships with resolved targets
     - modules: module-level dependency graph
     """
-    graph = CallGraph()
+    graph = ProjectAST()
 
     # Step 1: Extract all definitions from all files
     for file_path, source in project_files.items():

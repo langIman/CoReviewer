@@ -6,7 +6,7 @@
 import json
 
 from fastapi import HTTPException
-from backend.models.graph_models import CallGraph
+from backend.models.graph_models import ProjectAST
 
 
 def parse_llm_json(raw: str) -> dict:
@@ -43,7 +43,7 @@ def normalize_flow_data(data: dict) -> None:
     ]
 
 
-def fill_line_numbers_from_ast(data: dict, graph: CallGraph) -> None:
+def fill_line_numbers_from_ast(data: dict, graph: ProjectAST) -> None:
     """Fill lineStart/lineEnd from AST definitions as fallback.
 
     If LLM already provided lineStart/lineEnd (e.g. pointing to call sites
@@ -86,7 +86,7 @@ def fill_line_numbers_from_ast(data: dict, graph: CallGraph) -> None:
             node["lineEnd"] = defn.line_end
 
 
-def build_flow_data(graph: CallGraph) -> dict:
+def build_flow_data(graph: ProjectAST) -> dict:
     """Convert call graph to React Flow-compatible nodes & edges.
 
     Layer 1 (module level): each file is a node, import = edge

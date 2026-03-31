@@ -74,32 +74,12 @@ export interface AnalyzeGraphResponse {
   }
 }
 
-export interface AnnotateResponse {
-  status: 'ok' | 'fallback'
-  error?: string
-  annotations: Record<string, { label: string; description: string }>
-}
-
 /** Pure AST analysis — returns call graph + FlowData in milliseconds */
 export async function analyzeGraph(): Promise<AnalyzeGraphResponse> {
   const res = await fetch('/api/analyze/graph', { method: 'POST' })
   if (!res.ok) {
     const err = await res.json()
     throw new Error(err.detail || 'Graph analysis failed')
-  }
-  return res.json()
-}
-
-/** LLM semantic annotation — returns Chinese labels for each function */
-export async function analyzeAnnotate(modules?: string[]): Promise<AnnotateResponse> {
-  const res = await fetch('/api/analyze/annotate', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(modules ? { modules } : {}),
-  })
-  if (!res.ok) {
-    const err = await res.json()
-    throw new Error(err.detail || 'Annotation failed')
   }
   return res.json()
 }

@@ -1,4 +1,4 @@
-"""Data models for AST-based call graph analysis."""
+"""项目静态分析数据模型。"""
 
 from dataclasses import dataclass, field
 
@@ -42,8 +42,8 @@ class ModuleNode:
 
 
 @dataclass
-class CallGraph:
-    """Complete call graph of a project."""
+class ProjectAST:
+    """项目静态分析模型：符号表 + 调用关系 + 模块依赖 + 入口函数。"""
 
     definitions: dict[str, SymbolDef] = field(default_factory=dict)
     edges: list[CallEdge] = field(default_factory=list)
