@@ -5,7 +5,8 @@ import ActionBar from './components/ActionBar'
 import AIPanel from './components/AIPanel/AIPanel'
 import FileTree from './components/FileTree/FileTree'
 import { useReviewStore } from './store/useReviewStore'
-import { uploadFile, uploadProject, generateProjectSummary } from './services/api'
+import { uploadFile, generateHierarchicalSummary } from './services/api'
+import type { ReviewResponse } from './types'
 import { useLanguage } from './i18n/LanguageContext'
 
 export default function App() {
@@ -15,18 +16,22 @@ export default function App() {
   const summaryLoading = useReviewStore((s) => s.summaryLoading)
   const { t } = useLanguage()
 
-  /** 上传项目后自动生成摘要 */
-  const handleProjectLoaded = useCallback(async () => {
-    const { setSummaryLoading, setSummaryReady } = useReviewStore.getState()
-    try {
-      await generateProjectSummary()
-      setSummaryReady(true)
-    } catch {
-      // 摘要失败不阻塞使用，但标记完成
-      setSummaryReady(true)
-    } finally {
-      setSummaryLoading(false)
-    }
+  const handleProjectLoaded = useCallback(() => {
+    const { addResponse, updateResponseContent, setResponseDone, setSummaryLoading, setSummaryReady } = useReviewStore.getState()
+    const id = `overview-${Date.now()}`
+    addResponse({ id, startLine: 0, endLine: 0, content: '', action: 'overview', loading: true, timestamp: Date.now() } as ReviewResponse)
+    generateHierarchicalSummary()
+      .then((data) => {
+        updateResponseContent(id, `## ${data.project_name}\n\n${data.project_summary}`)
+        setResponseDone(id)
+        setSummaryReady(true)
+      })
+      .catch(() => {
+        updateResponseContent(id, '')
+        setResponseDone(id)
+        setSummaryReady(true)
+      })
+      .finally(() => setSummaryLoading(false))
   }, [])
 
   const [dragging, setDragging] = useState(false)

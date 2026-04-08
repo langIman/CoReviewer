@@ -8,8 +8,12 @@
 """
 
 import ast
+import logging
 from pathlib import PurePosixPath
 
+logger = logging.getLogger(__name__)
+
+from backend.config import is_ast_file
 from backend.models.graph_models import CallEdge, ProjectAST, ModuleNode, SymbolDef
 from backend.utils.analysis.import_analysis import (
     extract_imports,
@@ -217,15 +221,23 @@ def _build_import_name_map(
             else:
                 candidates = [f"{parts}.py", f"{parts}/__init__.py"]
 
-            # Find matching project file
+            # Find matching project file (exact match, then suffix match for
+            # projects uploaded with a root folder prefix, e.g. "TestProject/")
             target_file = None
             for c in candidates:
                 normalized = str(PurePosixPath(c))
                 if normalized in project_files:
                     target_file = normalized
                     break
+                for pf in project_files:
+                    if pf.endswith("/" + normalized):
+                        target_file = pf
+                        break
+                if target_file:
+                    break
 
             if not target_file:
+                logger.debug("Import not resolved in %s: 'from %s import ...' (external or missing)", file_path, module)
                 continue
 
             # Map each imported name
@@ -284,7 +296,7 @@ def build_call_graph(project_files: dict[str, str]) -> ProjectAST:
 
     # Step 1: Extract all definitions from all files
     for file_path, source in project_files.items():
-        if not file_path.endswith(".py"):
+        if not is_ast_file(file_path):
             continue
         file_defs = _extract_definitions_from_file(file_path, source)
         for d in file_defs:
@@ -292,7 +304,7 @@ def build_call_graph(project_files: dict[str, str]) -> ProjectAST:
 
     # Step 2: Extract call edges from each function body
     for file_path, source in project_files.items():
-        if not file_path.endswith(".py"):
+        if not is_ast_file(file_path):
             continue
         try:
             tree = ast.parse(source)
@@ -315,14 +327,14 @@ def build_call_graph(project_files: dict[str, str]) -> ProjectAST:
 
     # Step 3: Resolve call edges using import analysis
     for file_path, source in project_files.items():
-        if not file_path.endswith(".py"):
+        if not is_ast_file(file_path):
             continue
         file_edges = [e for e in graph.edges if e.file == file_path]
         _resolve_call_edges(file_edges, file_path, source, project_files, graph.definitions)
 
     # Step 4: Build module-level dependency graph
     for file_path, source in project_files.items():
-        if not file_path.endswith(".py"):
+        if not is_ast_file(file_path):
             continue
         imports = extract_imports(source)
         import_paths = resolve_imports_to_project_files(imports, file_path, project_files)

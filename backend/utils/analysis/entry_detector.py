@@ -7,6 +7,7 @@
 """
 
 import ast
+from backend.config import is_ast_file
 from backend.models.graph_models import ProjectAST
 
 
@@ -104,7 +105,7 @@ def detect_entry_points(
     # Rule 3: Functions in files with __main__ guard
     main_guard_files: set[str] = set()
     for file_path, source in project_files.items():
-        if file_path.endswith(".py") and _has_main_guard(source):
+        if is_ast_file(file_path) and _has_main_guard(source):
             main_guard_files.add(file_path)
 
     for qname, defn in graph.definitions.items():

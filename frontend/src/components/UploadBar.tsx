@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react'
 import { useReviewStore } from '../store/useReviewStore'
-import { uploadFile, uploadProject, generateProjectSummary, analyzeOverview } from '../services/api'
+import { uploadFile, uploadProject, analyzeOverview, generateHierarchicalSummary, splitModules } from '../services/api'
 import { useLanguage } from '../i18n/LanguageContext'
 import { useTheme } from '../i18n/ThemeContext'
 
@@ -27,6 +27,49 @@ export default function UploadBar() {
     [setFile, t]
   )
 
+  const runProjectAction = useCallback(async (
+    action: string,
+    apiFn: () => Promise<unknown>,
+    formatResult: (data: unknown) => string,
+    onDone?: () => void,
+  ) => {
+    const { addResponse, updateResponseContent, setResponseDone } = useReviewStore.getState()
+    const id = `${action}-${Date.now()}`
+    addResponse({ id, startLine: 0, endLine: 0, content: '', action, loading: true, timestamp: Date.now() })
+    try {
+      const data = await apiFn()
+      updateResponseContent(id, formatResult(data))
+      setResponseDone(id)
+      onDone?.()
+    } catch (err: unknown) {
+      updateResponseContent(id, '')
+      setResponseDone(id)
+      onDone?.()
+      alert(err instanceof Error ? err.message : t('upload.failed'))
+    }
+  }, [t])
+
+  const handleOverview = useCallback(() => {
+    const { setSummaryLoading, setSummaryReady } = useReviewStore.getState()
+    runProjectAction(
+      'overview',
+      generateHierarchicalSummary,
+      (data) => {
+        const d = data as { project_name: string; project_summary: string }
+        return `## ${d.project_name}\n\n${d.project_summary}`
+      },
+      () => { setSummaryReady(true); setSummaryLoading(false) },
+    )
+  }, [runProjectAction])
+
+  const handleModuleSplit = useCallback(() => {
+    runProjectAction('modules', splitModules, (data) => JSON.stringify(data))
+  }, [runProjectAction])
+
+  const handleVisualize = useCallback(() => {
+    runProjectAction('visualize', analyzeOverview, (data) => JSON.stringify(data))
+  }, [runProjectAction])
+
   const handleFolderUpload = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
       const files = e.target.files
@@ -34,41 +77,14 @@ export default function UploadBar() {
       try {
         const data = await uploadProject(files)
         setProject(data)
-        const { setSummaryLoading, setSummaryReady } = useReviewStore.getState()
-        generateProjectSummary()
-          .then(() => setSummaryReady(true))
-          .catch(() => setSummaryReady(true))
-          .finally(() => setSummaryLoading(false))
+        handleOverview()
       } catch (err: unknown) {
         alert(err instanceof Error ? err.message : t('upload.projectFailed'))
       }
       e.target.value = ''
     },
-    [setProject, t]
+    [setProject, t, handleOverview]
   )
-
-  const handleVisualize = useCallback(async () => {
-    const { addResponse, updateResponseContent, setResponseDone } = useReviewStore.getState()
-    const id = `viz-${Date.now()}`
-    addResponse({
-      id,
-      startLine: 0,
-      endLine: 0,
-      content: '',
-      action: 'visualize',
-      loading: true,
-      timestamp: Date.now(),
-    })
-    try {
-      const overviewData = await analyzeOverview()
-      updateResponseContent(id, JSON.stringify(overviewData))
-      setResponseDone(id)
-    } catch (err: unknown) {
-      updateResponseContent(id, '')
-      setResponseDone(id)
-      alert(err instanceof Error ? err.message : t('upload.failed'))
-    }
-  }, [t])
 
   return (
     <div className="flex items-center gap-3 px-4 py-2 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
@@ -101,7 +117,7 @@ export default function UploadBar() {
         )}
       </div>
 
-      <input ref={fileInputRef} type="file" accept=".py" className="hidden" onChange={handleUpload} />
+      <input ref={fileInputRef} type="file" className="hidden" onChange={handleUpload} />
       <input
         ref={folderInputRef}
         type="file"
@@ -116,12 +132,26 @@ export default function UploadBar() {
         </span>
       )}
       {projectMode && summaryReady && (
-        <button
-          className="px-2.5 py-1 text-xs font-medium text-white bg-purple-600 rounded hover:bg-purple-700 transition-colors"
-          onClick={handleVisualize}
-        >
-          {t('visualize.button')}
-        </button>
+        <>
+          <button
+            className="px-2.5 py-1 text-xs font-medium text-white bg-green-600 rounded hover:bg-green-700 transition-colors"
+            onClick={handleOverview}
+          >
+            {t('overview.button')}
+          </button>
+          <button
+            className="px-2.5 py-1 text-xs font-medium text-white bg-purple-600 rounded hover:bg-purple-700 transition-colors"
+            onClick={handleVisualize}
+          >
+            {t('visualize.button')}
+          </button>
+          <button
+            className="px-2.5 py-1 text-xs font-medium text-white bg-orange-600 rounded hover:bg-orange-700 transition-colors"
+            onClick={handleModuleSplit}
+          >
+            {t('module.button')}
+          </button>
+        </>
       )}
       {projectMode && (
         <button className="text-xs text-red-500 hover:text-red-700" onClick={clearProject}>

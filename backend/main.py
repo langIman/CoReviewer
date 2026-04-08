@@ -1,13 +1,30 @@
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI
+import logging
+
+logging.basicConfig(
+    force=True,
+    level=logging.DEBUG,
+    format="%(asctime)s %(levelname)-8s [%(name)s] %(message)s",
+    datefmt="%H:%M:%S",
+)
+# multipart 的 DEBUG 日志极其冗长（每次上传几十行），压制到 WARNING
+logging.getLogger("multipart").setLevel(logging.WARNING)
+
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from backend.controllers import (
     file_controller,
     review_controller,
     graph_controller,
+    summary_controller,
+    module_controller,
 )
+from backend.dao.database import init_db
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="CoReviewer", version="0.1.0")
 
@@ -19,9 +36,23 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.exception("Unhandled %s on %s %s", type(exc).__name__, request.method, request.url.path)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"{type(exc).__name__}: {exc}"},
+    )
+
+
 app.include_router(file_controller.router)
 app.include_router(review_controller.router)
 app.include_router(graph_controller.router)
+app.include_router(summary_controller.router)
+app.include_router(module_controller.router)
+
+init_db()
 
 
 @app.get("/api/health")

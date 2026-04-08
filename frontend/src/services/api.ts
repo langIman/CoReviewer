@@ -25,43 +25,6 @@ export async function uploadProject(files: FileList): Promise<ProjectData> {
   return res.json()
 }
 
-export async function generateProjectSummary(): Promise<string> {
-  const res = await fetch('/api/file/project/summary', { method: 'POST' })
-  if (!res.ok) {
-    const err = await res.json()
-    throw new Error(err.detail || 'Summary generation failed')
-  }
-  const data = await res.json()
-  return data.summary
-}
-
-export async function visualizeProject(): Promise<FlowData> {
-  const res = await fetch('/api/visualize', { method: 'POST' })
-  if (!res.ok) {
-    const err = await res.json()
-    throw new Error(err.detail || 'Visualization failed')
-  }
-  return res.json()
-}
-
-export async function visualizeDetail(params: {
-  label: string
-  description: string
-  file?: string
-  symbol?: string
-}): Promise<FlowData> {
-  const res = await fetch('/api/visualize/detail', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(params),
-  })
-  if (!res.ok) {
-    const err = await res.json()
-    throw new Error(err.detail || 'Detail generation failed')
-  }
-  return res.json()
-}
-
 /** Expand a function's internal logic via LLM */
 export async function analyzeDetail(qualifiedName: string): Promise<FlowData> {
   const res = await fetch('/api/graph/detail', {
@@ -82,6 +45,27 @@ export async function analyzeOverview(): Promise<FlowData> {
   if (!res.ok) {
     const err = await res.json()
     throw new Error(err.detail || 'Overview generation failed')
+  }
+  return res.json()
+}
+
+export async function generateHierarchicalSummary(): Promise<{
+  project_name: string
+  project_summary: string
+}> {
+  const res = await fetch('/api/summary/generate', { method: 'POST' })
+  if (!res.ok) {
+    const err = await res.json()
+    throw new Error(err.detail || 'Hierarchical summary generation failed')
+  }
+  return res.json()
+}
+
+export async function splitModules(): Promise<{ modules: { name: string; description: string; paths: string[] }[] }> {
+  const res = await fetch('/api/module/split', { method: 'POST' })
+  if (!res.ok) {
+    const err = await res.json()
+    throw new Error(err.detail || 'Module split failed')
   }
   return res.json()
 }

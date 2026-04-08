@@ -46,8 +46,3 @@ class Mailbox:
         """阻塞等待，读即消费（exactly-once）。"""
         return await self._boxes[agent_name].get()
 
-    async def broadcast(self, sender: str, msg_type: str, payload: dict | None = None) -> None:
-        """向所有已注册 agent（除发送者外）广播消息。"""
-        for name in self._boxes:
-            if name != sender:
-                await self.send(Message(sender, name, msg_type, payload or {}))

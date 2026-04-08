@@ -2,14 +2,19 @@ from collections.abc import AsyncGenerator
 
 import httpx
 import json
+import logging
+
+from fastapi import HTTPException
 
 from backend.config import QWEN_API_KEY, QWEN_BASE_URL, QWEN_MODEL
+
+logger = logging.getLogger(__name__)
 
 
 async def call_qwen(system_prompt: str, user_prompt: str) -> str:
     """调用千问 API（非流式），返回完整文本。"""
     if not QWEN_API_KEY:
-        return "错误：未配置 QWEN_API_KEY 环境变量。"
+        raise HTTPException(status_code=500, detail="未配置 QWEN_API_KEY 环境变量")
 
     url = f"{QWEN_BASE_URL}/chat/completions"
     headers = {
@@ -28,7 +33,11 @@ async def call_qwen(system_prompt: str, user_prompt: str) -> str:
     async with httpx.AsyncClient(timeout=120.0) as client:
         resp = await client.post(url, json=payload, headers=headers)
         if resp.status_code != 200:
-            return f"LLM API 错误 ({resp.status_code}): {resp.text}"
+            logger.error("LLM API error %d: %s", resp.status_code, resp.text[:500])
+            raise HTTPException(
+                status_code=502,
+                detail=f"LLM API 错误 ({resp.status_code}): {resp.text[:200]}",
+            )
         data = resp.json()
         return data["choices"][0]["message"]["content"]
 
@@ -36,8 +45,7 @@ async def call_qwen(system_prompt: str, user_prompt: str) -> str:
 async def stream_qwen(system_prompt: str, user_prompt: str) -> AsyncGenerator[str, None]:
     """调用千问 API（OpenAI 兼容格式），流式返回文本片段。"""
     if not QWEN_API_KEY:
-        yield "错误：未配置 QWEN_API_KEY 环境变量。请设置后重启后端。"
-        return
+        raise HTTPException(status_code=500, detail="未配置 QWEN_API_KEY 环境变量")
 
     url = f"{QWEN_BASE_URL}/chat/completions"
     headers = {
@@ -57,8 +65,11 @@ async def stream_qwen(system_prompt: str, user_prompt: str) -> AsyncGenerator[st
         async with client.stream("POST", url, json=payload, headers=headers) as resp:
             if resp.status_code != 200:
                 body = await resp.aread()
-                yield f"LLM API 错误 ({resp.status_code}): {body.decode()}"
-                return
+                logger.error("LLM stream error %d: %s", resp.status_code, body.decode()[:500])
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"LLM API 错误 ({resp.status_code}): {body.decode()[:200]}",
+                )
 
             async for line in resp.aiter_lines():
                 if not line.startswith("data: "):
@@ -73,4 +84,5 @@ async def stream_qwen(system_prompt: str, user_prompt: str) -> AsyncGenerator[st
                     if content:
                         yield content
                 except (json.JSONDecodeError, KeyError, IndexError):
+                    logger.debug("SSE chunk parse skipped: %s", data[:100])
                     continue

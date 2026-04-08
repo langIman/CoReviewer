@@ -53,7 +53,7 @@ async def upload_project_files(files: list[UploadFile]) -> ProjectUploadResponse
         ))
 
     if not file_infos:
-        raise HTTPException(status_code=400, detail="No valid .py files found in upload")
+        raise HTTPException(status_code=400, detail="No valid source files found in upload")
 
     all_paths = [fi.path for fi in file_infos]
     first_parts = [p.split("/")[0] for p in all_paths if "/" in p]

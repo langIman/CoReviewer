@@ -128,10 +128,14 @@ async def generate_overview_with_agents(
             ))
 
         # 等待 worker tasks 完成
-        await asyncio.gather(*worker_tasks, return_exceptions=True)
+        results = await asyncio.gather(*worker_tasks, return_exceptions=True)
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                logger.error("Worker task %d failed: %s: %s", i, type(result).__name__, result)
 
     # Phase 4: 构建 Lead prompt → LLM 生成流程图
     kb_text = kb.format_for_prompt()
+    logger.debug("KnowledgeBase contents:\n%s", kb_text or "(empty)")
     system_prompt, user_prompt = build_lead_prompt(key_file, key_source, kb_text)
     raw = await call_qwen(system_prompt, user_prompt)
 

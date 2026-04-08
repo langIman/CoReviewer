@@ -16,15 +16,6 @@ class KnowledgeBase:
     def put(self, summary: FunctionSummary) -> None:
         self._entries[summary.qualified_name] = summary
 
-    def get(self, qname: str) -> FunctionSummary | None:
-        return self._entries.get(qname)
-
-    def all_summaries(self) -> list[FunctionSummary]:
-        return list(self._entries.values())
-
-    def is_complete(self, expected: set[str]) -> bool:
-        return expected.issubset(self._entries.keys())
-
     def format_for_prompt(self) -> str:
         """格式化为 Lead prompt 中的辅助函数语义摘要。
 

@@ -56,11 +56,19 @@ def resolve_imports_to_project_files(
             ]
 
         for candidate in candidates:
-            # 标准化路径（去掉 ./ 等）
             normalized = str(PurePosixPath(candidate))
+            found = None
             if normalized in project_files:
-                if normalized not in matched:
-                    matched.append(normalized)
+                found = normalized
+            else:
+                # Suffix match for projects uploaded with a root folder prefix
+                for pf in project_files:
+                    if pf.endswith("/" + normalized):
+                        found = pf
+                        break
+            if found:
+                if found not in matched:
+                    matched.append(found)
                 break
 
     return matched
