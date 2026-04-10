@@ -10,7 +10,7 @@ from backend.dao.file_store import (
     validate_file, store_file, store_project,
     get_project_files, get_project_name, set_project_summary,
 )
-from backend.dao.graph_cache import invalidate_cache
+from backend.services.init_service import initialize_project
 from backend.services.llm.llm_service import call_qwen
 from backend.services.llm.prompts.summary import build_summary_prompt
 
@@ -60,7 +60,7 @@ async def upload_project_files(files: list[UploadFile]) -> ProjectUploadResponse
     project_name = first_parts[0] if first_parts else "project"
 
     store_project(project_name, project_files)
-    invalidate_cache()
+    initialize_project(project_name)
 
     return ProjectUploadResponse(project_name=project_name, files=file_infos)
 

@@ -61,8 +61,9 @@ async def generate_detail(qualified_name: str) -> dict:
     func_source = "\n".join(lines[defn.line_start - 1 : defn.line_end])
 
     # Build signature
-    params_str = ", ".join(defn.params)
-    signature = f"def {defn.name}({params_str})"
+    from backend.config import get_file_language
+    from backend.utils.analysis.ts_parser import format_signature
+    signature = format_signature(defn, get_file_language(defn.file))
 
     # Collect called functions info
     called_functions: list[dict] = []

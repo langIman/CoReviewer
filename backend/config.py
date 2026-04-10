@@ -14,13 +14,27 @@ ALLOWED_EXTENSIONS = {
     # 文档 / 其他
     ".md", ".txt", ".html", ".css", ".sql", ".sh", ".dockerfile",
 }
-# AST 静态分析仅支持 Python
-AST_EXTENSIONS = {".py"}
+# AST 静态分析支持的文件类型
+AST_EXTENSIONS = {".py", ".rs"}
+
+# 扩展名 → 语言标识映射
+_LANG_MAP: dict[str, str] = {
+    ".py": "python",
+    ".rs": "rust",
+}
 
 
 def is_ast_file(path: str) -> bool:
     """Check if a file path has an AST-analyzable extension."""
     return any(path.endswith(ext) for ext in AST_EXTENSIONS)
+
+
+def get_file_language(path: str) -> str | None:
+    """根据扩展名返回语言标识。"""
+    for ext, lang in _LANG_MAP.items():
+        if path.endswith(ext):
+            return lang
+    return None
 MAX_PROJECT_SIZE = 10 * 1024 * 1024  # 10MB total
 MAX_PROJECT_FILES = 200
 

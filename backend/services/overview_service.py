@@ -94,8 +94,9 @@ async def _summarize_function(
         func_source = "\n".join(lines[defn.line_start - 1: defn.line_end])
 
         try:
-            params_str = ", ".join(defn.params)
-            signature = f"def {defn.name}({params_str})"
+            from backend.config import get_file_language
+            from backend.utils.analysis.ts_parser import format_signature
+            signature = format_signature(defn, get_file_language(defn.file))
             system_prompt, user_prompt = build_worker_prompt(
                 func_name=defn.name,
                 file_path=defn.file,

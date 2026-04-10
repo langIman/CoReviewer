@@ -83,13 +83,30 @@ def get_related_files(
     """获取当前文件通过 import 引用的相关项目文件。
 
     返回 (path, content) 列表，内容超过 max_lines 行会被截断。
+    支持多语言：Python 走原有逻辑，其他语言走 tree-sitter。
     """
+    from backend.config import get_file_language
+    from backend.utils.analysis.ts_parser import (
+        get_lang_config, ts_extract_imports, ts_resolve_imports_to_project_files,
+    )
+
     source = project_files.get(file_path, "")
     if not source:
         return []
 
-    imports = extract_imports(source)
-    related_paths = resolve_imports_to_project_files(imports, file_path, project_files)
+    lang = get_file_language(file_path)
+    if lang and lang != "python":
+        config = get_lang_config(lang)
+        if config:
+            raw_imports = ts_extract_imports(source, config)
+            related_paths = ts_resolve_imports_to_project_files(
+                raw_imports, file_path, project_files, config
+            )
+        else:
+            return []
+    else:
+        imports = extract_imports(source)
+        related_paths = resolve_imports_to_project_files(imports, file_path, project_files)
 
     results: list[tuple[str, str]] = []
     for path in related_paths[:max_files]:

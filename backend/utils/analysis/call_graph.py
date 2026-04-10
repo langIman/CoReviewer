@@ -13,11 +13,19 @@ from pathlib import PurePosixPath
 
 logger = logging.getLogger(__name__)
 
-from backend.config import is_ast_file
+from backend.config import is_ast_file, get_file_language
 from backend.models.graph_models import CallEdge, ProjectAST, ModuleNode, SymbolDef
 from backend.utils.analysis.import_analysis import (
     extract_imports,
     resolve_imports_to_project_files,
+)
+from backend.utils.analysis.ts_parser import (
+    get_lang_config,
+    ts_extract_definitions,
+    ts_extract_calls,
+    ts_resolve_call_edges,
+    ts_extract_imports,
+    ts_resolve_imports_to_project_files,
 )
 
 
@@ -291,58 +299,70 @@ def build_call_graph(project_files: dict[str, str]) -> ProjectAST:
     - definitions: all function/class/method definitions
     - edges: all call relationships with resolved targets
     - modules: module-level dependency graph
+
+    Python 走原有 ast 管道，其他语言走 tree-sitter 统一管道。
     """
     graph = ProjectAST()
 
     # Step 1: Extract all definitions from all files
     for file_path, source in project_files.items():
-        if not is_ast_file(file_path):
+        lang = get_file_language(file_path)
+        if lang == "python":
+            file_defs = _extract_definitions_from_file(file_path, source)
+        elif lang and (config := get_lang_config(lang)):
+            file_defs = ts_extract_definitions(file_path, source, config)
+        else:
             continue
-        file_defs = _extract_definitions_from_file(file_path, source)
         for d in file_defs:
             graph.definitions[d.qualified_name] = d
 
     # Step 2: Extract call edges from each function body
     for file_path, source in project_files.items():
-        if not is_ast_file(file_path):
-            continue
-        try:
-            tree = ast.parse(source)
-        except SyntaxError:
-            continue
-
-        for node in ast.walk(tree):
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                # Determine the qualified name based on parent
-                qname = f"{file_path}::{node.name}"
-                # Check if it's a method (parent is ClassDef)
-                # ast.walk doesn't track parents, so check definitions
-                for dname, ddef in graph.definitions.items():
-                    if ddef.file == file_path and ddef.line_start == node.lineno:
-                        qname = dname
-                        break
-
-                calls = _extract_calls_from_function(node, qname, file_path)
-                graph.edges.extend(calls)
+        lang = get_file_language(file_path)
+        if lang == "python":
+            try:
+                tree = ast.parse(source)
+            except SyntaxError:
+                continue
+            for node in ast.walk(tree):
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    qname = f"{file_path}::{node.name}"
+                    for dname, ddef in graph.definitions.items():
+                        if ddef.file == file_path and ddef.line_start == node.lineno:
+                            qname = dname
+                            break
+                    calls = _extract_calls_from_function(node, qname, file_path)
+                    graph.edges.extend(calls)
+        elif lang and (config := get_lang_config(lang)):
+            calls = ts_extract_calls(file_path, source, graph.definitions, config)
+            graph.edges.extend(calls)
 
     # Step 3: Resolve call edges using import analysis
     for file_path, source in project_files.items():
-        if not is_ast_file(file_path):
-            continue
+        lang = get_file_language(file_path)
         file_edges = [e for e in graph.edges if e.file == file_path]
-        _resolve_call_edges(file_edges, file_path, source, project_files, graph.definitions)
+        if not file_edges:
+            continue
+        if lang == "python":
+            _resolve_call_edges(file_edges, file_path, source, project_files, graph.definitions)
+        elif lang and (config := get_lang_config(lang)):
+            ts_resolve_call_edges(file_edges, file_path, source, project_files, graph.definitions, config)
 
     # Step 4: Build module-level dependency graph
     for file_path, source in project_files.items():
-        if not is_ast_file(file_path):
+        lang = get_file_language(file_path)
+        if lang == "python":
+            imports = extract_imports(source)
+            import_paths = resolve_imports_to_project_files(imports, file_path, project_files)
+        elif lang and (config := get_lang_config(lang)):
+            imports = ts_extract_imports(source, config)
+            import_paths = ts_resolve_imports_to_project_files(imports, file_path, project_files, config)
+        else:
             continue
-        imports = extract_imports(source)
-        import_paths = resolve_imports_to_project_files(imports, file_path, project_files)
         line_count = source.count("\n") + 1
         symbol_count = sum(
             1 for d in graph.definitions.values() if d.file == file_path
         )
-        short_name = file_path.split("/")[-1]
         graph.modules[file_path] = ModuleNode(
             path=file_path,
             line_count=line_count,

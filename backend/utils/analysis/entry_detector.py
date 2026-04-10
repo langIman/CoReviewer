@@ -7,8 +7,9 @@
 """
 
 import ast
-from backend.config import is_ast_file
+from backend.config import is_ast_file, get_file_language
 from backend.models.graph_models import ProjectAST
+from backend.utils.analysis.ts_parser import get_lang_config
 
 
 # ---------------------------------------------------------------------------
@@ -102,10 +103,21 @@ def detect_entry_points(
                 entry_qnames.add(qname)
                 break
 
-    # Rule 3: Functions in files with __main__ guard
+    # Rule 1.5: tree-sitter 语言的入口检测（如 Rust 的 fn main / #[tokio::main] / 路由属性）
+    detected_langs: set[str] = set()
+    for defn in graph.definitions.values():
+        lang = get_file_language(defn.file)
+        if lang and lang != "python" and lang not in detected_langs:
+            detected_langs.add(lang)
+            config = get_lang_config(lang)
+            if config and config.detect_lang_entries:
+                lang_entries = config.detect_lang_entries(graph.definitions, project_files)
+                entry_qnames.update(lang_entries)
+
+    # Rule 3: Functions in files with __main__ guard (Python only)
     main_guard_files: set[str] = set()
     for file_path, source in project_files.items():
-        if is_ast_file(file_path) and _has_main_guard(source):
+        if file_path.endswith(".py") and _has_main_guard(source):
             main_guard_files.add(file_path)
 
     for qname, defn in graph.definitions.items():

@@ -19,8 +19,22 @@ logger = logging.getLogger(__name__)
 INSUFFICIENT_INFO = "信息不足无法推测"
 
 
-def extract_file_skeleton(content: str) -> str:
-    """用 AST 提取每个函数前N行、每个类前N行，受截断百分比上限限制。"""
+def extract_file_skeleton(content: str, file_path: str = "") -> str:
+    """用 AST 提取每个函数前N行、每个类前N行，受截断百分比上限限制。
+
+    根据文件语言自动选择解析器：Python 用内置 ast，其他语言走 tree-sitter。
+    """
+    from backend.config import get_file_language
+    from backend.utils.analysis.ts_parser import get_lang_config, ts_extract_skeleton
+
+    # 非 Python 文件走 tree-sitter
+    lang = get_file_language(file_path) if file_path else None
+    if lang and lang != "python":
+        config = get_lang_config(lang)
+        if config:
+            return ts_extract_skeleton(content, config)
+
+    # Python 走原有 ast 管道
     lines = content.split("\n")
     total_lines = len(lines)
     max_extract_lines = max(int(total_lines * SUMMARY_TRUNCATION_PERCENT), 10)
@@ -100,7 +114,7 @@ async def _generate_single_file_summary(
     """生成单个文件的摘要，含重传机制。"""
     async with semaphore:
         # 第一次：用骨架
-        skeleton = extract_file_skeleton(content)
+        skeleton = extract_file_skeleton(content, file_path=file_path)
         system, user = build_file_summary_prompt(file_path, skeleton)
         summary = await call_qwen(system, user)
 
