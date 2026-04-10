@@ -11,7 +11,7 @@ import textwrap
 from fastapi import HTTPException
 
 from backend.models.graph_models import ProjectAST
-from backend.services.agents.config import DENSITY_THRESHOLD
+from backend.config import DENSITY_THRESHOLD
 
 logger = logging.getLogger(__name__)
 

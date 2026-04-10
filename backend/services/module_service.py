@@ -6,7 +6,7 @@ from collections import defaultdict
 from backend.dao.file_store import get_project_name, get_project_files
 from backend.dao.summary_store import get_summaries_by_type
 from backend.dao.graph_cache import get_cached, is_cache_valid
-from backend.services.llm.llm_service import call_qwen
+from backend.services.agent import Agent
 from backend.services.llm.prompts.module_prompts import build_module_split_prompt
 from backend.utils.data_format import parse_llm_json
 
@@ -101,16 +101,24 @@ async def generate_module_split() -> dict:
         raise ValueError("No project loaded")
 
     folder_summaries = get_summaries_by_type(project_name, "folder")
-    if not folder_summaries:
-        raise ValueError("No folder summaries found. Please generate summaries first.")
+    file_summaries = get_summaries_by_type(project_name, "file")
 
-    root_file_summaries = _collect_root_file_summaries(project_name, folder_summaries)
+    if not folder_summaries and not file_summaries:
+        raise ValueError("No summaries found. Please generate summaries first.")
+
+    # 单层目录（无子文件夹）时，直接用文件摘要做模块划分
+    if not folder_summaries:
+        root_file_summaries = file_summaries
+    else:
+        root_file_summaries = _collect_root_file_summaries(project_name, folder_summaries)
+
     folder_deps = _build_folder_dependencies()
 
     system, user = build_module_split_prompt(
         project_name, folder_summaries, root_file_summaries, folder_deps
     )
-    raw = await call_qwen(system, user)
+    agent = Agent(system_prompt=system, tools=[])
+    raw = await agent.run(user)
     result = parse_llm_json(raw)
 
     # 后处理：确保全覆盖

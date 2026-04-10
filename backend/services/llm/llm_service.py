@@ -86,3 +86,42 @@ async def stream_qwen(system_prompt: str, user_prompt: str) -> AsyncGenerator[st
                 except (json.JSONDecodeError, KeyError, IndexError):
                     logger.debug("SSE chunk parse skipped: %s", data[:100])
                     continue
+
+
+async def call_llm(
+    messages: list[dict],
+    tools: list[dict] | None = None,
+    timeout: float = 120.0,
+) -> dict:
+    """支持完整消息历史 + 工具定义的 LLM 调用。
+
+    返回完整的 choice message dict，可能包含 content 和/或 tool_calls。
+    """
+    if not QWEN_API_KEY:
+        raise HTTPException(status_code=500, detail="未配置 QWEN_API_KEY 环境变量")
+
+    url = f"{QWEN_BASE_URL}/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {QWEN_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    payload: dict = {
+        "model": QWEN_MODEL,
+        "messages": messages,
+        "stream": False,
+    }
+
+    if tools:
+        payload["tools"] = tools
+        payload["tool_choice"] = "auto"
+
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        resp = await client.post(url, json=payload, headers=headers)
+        if resp.status_code != 200:
+            logger.error("LLM API error %d: %s", resp.status_code, resp.text[:500])
+            raise HTTPException(
+                status_code=502,
+                detail=f"LLM API 错误 ({resp.status_code}): {resp.text[:200]}",
+            )
+        data = resp.json()
+        return data["choices"][0]["message"]

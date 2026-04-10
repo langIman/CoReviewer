@@ -27,3 +27,7 @@ MAX_PROJECT_FILES = 200
 # 摘要生成配置
 SUMMARY_FUNC_LINES = 5          # 每个函数/类提取的行数
 SUMMARY_TRUNCATION_PERCENT = 0.3  # 文件截断上限（30%）
+
+# Agent 系统配置（从 services/agents/config.py 迁移）
+MAX_WORKER_CONCURRENCY = 5          # Worker 最大并发数
+DENSITY_THRESHOLD = 5.0             # 业务密度评分阈值

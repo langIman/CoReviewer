@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import UploadBar from './components/UploadBar'
 import CodeView from './components/CodeView/CodeView'
 import ActionBar from './components/ActionBar'
 import AIPanel from './components/AIPanel/AIPanel'
 import FileTree from './components/FileTree/FileTree'
+import ResizeHandle from './components/ResizeHandle'
 import { useReviewStore } from './store/useReviewStore'
 import { uploadFile, generateHierarchicalSummary } from './services/api'
 import type { ReviewResponse } from './types'
@@ -33,6 +34,43 @@ export default function App() {
       })
       .finally(() => setSummaryLoading(false))
   }, [])
+
+  // Panel widths as fractions of container (sum to 1.0).
+  // In project mode: [fileTree, codeView, aiPanel]
+  // In single-file mode: fileTree fraction is ignored, codeView+aiPanel split the space.
+  const containerRef = useRef<HTMLDivElement>(null)
+  const HANDLE_W = 4 // px per resize handle
+  const MIN_PX = 120 // minimum panel width in px
+
+  // Default ratios: fileTree 15%, codeView 45%, aiPanel 40%
+  const [panelRatios, setPanelRatios] = useState([0.15, 0.45, 0.40])
+
+  const getUsableWidth = useCallback(() => {
+    const total = containerRef.current?.offsetWidth ?? window.innerWidth
+    const handles = useReviewStore.getState().projectMode ? 2 : 1
+    return total - handles * HANDLE_W
+  }, [])
+
+  // Left handle: move boundary between fileTree and codeView only
+  const handleFileTreeResize = useCallback((dx: number) => {
+    setPanelRatios(([ft, cv, ai]) => {
+      const usable = getUsableWidth()
+      const ftPx = Math.max(MIN_PX, Math.min(ft * usable + dx, (ft + cv) * usable - MIN_PX))
+      const cvPx = (ft + cv) * usable - ftPx // aiPanel unchanged
+      return [ftPx / usable, cvPx / usable, ai]
+    })
+  }, [getUsableWidth])
+
+  // Right handle: move boundary between codeView and aiPanel only
+  const handleCodeViewResize = useCallback((dx: number) => {
+    setPanelRatios(([ft, cv, ai]) => {
+      const usable = getUsableWidth()
+      const isProject = useReviewStore.getState().projectMode
+      const cvPx = Math.max(MIN_PX, Math.min(cv * usable + dx, (cv + ai) * usable - MIN_PX))
+      const aiPx = (cv + ai) * usable - cvPx // fileTree unchanged
+      return isProject ? [ft, cvPx / usable, aiPx / usable] : [ft, cvPx / usable, aiPx / usable]
+    })
+  }, [getUsableWidth])
 
   const [dragging, setDragging] = useState(false)
   const [dragCounter, setDragCounter] = useState(0)
@@ -124,19 +162,34 @@ export default function App() {
       onDrop={handleDrop}
     >
       <UploadBar />
-      <div className="flex flex-1 overflow-hidden">
-        {projectMode && (
-          <div className="w-56 flex-shrink-0 border-r border-gray-200 dark:border-gray-700 overflow-auto bg-gray-50 dark:bg-gray-800">
-            <FileTree />
-          </div>
+      <div ref={containerRef} className="flex flex-1 overflow-hidden">
+        {projectMode ? (
+          <>
+            <div style={{ width: `${panelRatios[0] * 100}%` }} className="flex-shrink-0 overflow-auto bg-gray-50 dark:bg-gray-800">
+              <FileTree />
+            </div>
+            <ResizeHandle onResize={handleFileTreeResize} />
+            <div style={{ width: `${panelRatios[1] * 100}%` }} className="flex flex-col flex-shrink-0 min-w-0">
+              <CodeView />
+              <ActionBar />
+            </div>
+            <ResizeHandle onResize={handleCodeViewResize} />
+            <div style={{ width: `${panelRatios[2] * 100}%` }} className="flex-shrink-0 min-w-0">
+              <AIPanel />
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={{ width: `${(panelRatios[1] / (panelRatios[1] + panelRatios[2])) * 100}%` }} className="flex flex-col flex-shrink-0 min-w-0">
+              <CodeView />
+              <ActionBar />
+            </div>
+            <ResizeHandle onResize={handleCodeViewResize} />
+            <div style={{ width: `${(panelRatios[2] / (panelRatios[1] + panelRatios[2])) * 100}%` }} className="flex-shrink-0 min-w-0">
+              <AIPanel />
+            </div>
+          </>
         )}
-        <div className="flex flex-col flex-1 border-r border-gray-200 dark:border-gray-700 min-w-0">
-          <CodeView />
-          <ActionBar />
-        </div>
-        <div className="flex-1 min-w-0">
-          <AIPanel />
-        </div>
       </div>
 
       {/* 全屏拖放遮罩 */}

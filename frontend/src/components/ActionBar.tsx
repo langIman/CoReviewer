@@ -4,8 +4,6 @@ import { useLanguage } from '../i18n/LanguageContext'
 
 const ACTIONS = [
   { key: 'explain', labelKey: 'action.explain' },
-  { key: 'review', labelKey: 'action.review' },
-  { key: 'suggest', labelKey: 'action.suggest' },
 ] as const
 
 export default function ActionBar() {

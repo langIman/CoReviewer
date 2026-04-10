@@ -4,7 +4,7 @@ from typing import AsyncGenerator
 
 from backend.models.schemas import ReviewRequest, ProjectFileInfo
 from backend.services.llm.prompts.review import build_review_prompt
-from backend.services.llm.llm_service import stream_qwen
+from backend.services.agent import Agent
 from backend.utils.analysis.import_analysis import get_related_files
 from backend.dao.file_store import get_project_files
 
@@ -22,5 +22,6 @@ async def stream_review(req: ReviewRequest) -> AsyncGenerator[str, None]:
 
     system_prompt, user_prompt = build_review_prompt(req)
 
-    async for chunk in stream_qwen(system_prompt, user_prompt):
+    agent = Agent(system_prompt=system_prompt, tools=[])
+    async for chunk in agent.stream_run(user_prompt):
         yield chunk

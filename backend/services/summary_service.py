@@ -12,7 +12,7 @@ from backend.services.llm.prompts.summary_prompts import (
     build_folder_summary_prompt,
     build_project_summary_prompt,
 )
-from backend.services.agents.config import MAX_WORKER_CONCURRENCY
+from backend.config import MAX_WORKER_CONCURRENCY
 
 logger = logging.getLogger(__name__)
 

@@ -10,7 +10,7 @@ from fastapi import HTTPException
 
 from backend.utils.analysis.ast_service import get_or_build_ast
 from backend.models.graph_models import ProjectAST, SymbolDef
-from backend.services.llm.llm_service import call_qwen
+from backend.services.agent import Agent
 from backend.utils.data_format import parse_llm_json, normalize_flow_data
 from backend.services.llm.prompts.annotate import build_function_detail_prompt
 
@@ -85,7 +85,8 @@ async def generate_detail(qualified_name: str) -> dict:
         called_functions=called_functions if called_functions else None,
     )
 
-    raw = await call_qwen(system_prompt, user_prompt)
+    agent = Agent(system_prompt=system_prompt, tools=[])
+    raw = await agent.run(user_prompt)
     data = parse_llm_json(raw)
     normalize_flow_data(data)
 
