@@ -29,6 +29,9 @@ class CallEdge:
     file: str = ""         # caller's file
     line: int = 0          # call site line number
     call_type: str = "direct"  # "direct" | "attribute"
+    resolution_method: str | None = None  # how the edge was resolved
+    # ↑ None | "import" | "self_class" | "naive"
+    # 持久化到 SQLite，下游可按精度过滤、调试时能追溯
 
 
 @dataclass

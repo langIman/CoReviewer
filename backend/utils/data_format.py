@@ -10,15 +10,27 @@ from backend.models.graph_models import ProjectAST
 
 
 def parse_llm_json(raw: str) -> dict:
-    """Clean and parse LLM response text as JSON."""
+    """Clean and parse LLM response text as JSON.
+
+    Tolerant to two common LLM quirks:
+    - Markdown code fence wrappers (```json ... ```)
+    - Trailing explanatory text after the JSON object
+    """
     text = raw.strip()
     if text.startswith("```"):
         text = text.split("\n", 1)[1] if "\n" in text else text[3:]
     if text.endswith("```"):
         text = text[:-3]
     text = text.strip()
+
+    # Find the first '{' and use raw_decode so trailing chatter after the
+    # closing brace doesn't break parsing.
+    start = text.find("{")
+    if start < 0:
+        raise HTTPException(status_code=500, detail=f"LLM returned no JSON object: {text[:200]}")
     try:
-        return json.loads(text)
+        obj, _ = json.JSONDecoder().raw_decode(text[start:])
+        return obj
     except json.JSONDecodeError:
         raise HTTPException(status_code=500, detail=f"LLM returned invalid JSON: {text[:200]}")
 

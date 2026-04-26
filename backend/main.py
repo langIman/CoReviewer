@@ -17,10 +17,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from backend.controllers import (
     file_controller,
-    review_controller,
-    graph_controller,
-    summary_controller,
-    module_controller,
+    qa_controller,
+    wiki_controller,
 )
 from backend.dao.database import init_db
 
@@ -47,10 +45,8 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 
 app.include_router(file_controller.router)
-app.include_router(review_controller.router)
-app.include_router(graph_controller.router)
-app.include_router(summary_controller.router)
-app.include_router(module_controller.router)
+app.include_router(wiki_controller.router)
+app.include_router(qa_controller.router)
 
 init_db()
 

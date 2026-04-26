@@ -28,7 +28,7 @@ class GetFileContentTool(BaseTool):
             "properties": {
                 "path": {
                     "type": "string",
-                    "description": "文件相对路径，如 'backend/services/review_service.py'",
+                    "description": "文件相对路径，如 'backend/services/file_service.py'",
                 },
             },
             "required": ["path"],

@@ -1,128 +1,122 @@
-import type { FileData, ProjectData, FlowData } from '../types'
+import type {
+  ProjectUploadResponse,
+  WikiDocument,
+  WikiGenerateResponse,
+  WikiTaskStatusResponse,
+} from '../types/wiki'
 
-export async function uploadFile(file: File): Promise<FileData> {
+async function asJson<T>(res: Response, fallbackError: string): Promise<T> {
+  if (!res.ok) {
+    let detail = fallbackError
+    try {
+      const err = await res.json()
+      detail = err.detail || fallbackError
+    } catch {
+      // ignore
+    }
+    throw new Error(detail)
+  }
+  return res.json()
+}
+
+export async function uploadProject(files: FileList | { path: string; file: File }[]): Promise<ProjectUploadResponse> {
   const form = new FormData()
-  form.append('file', file)
-  const res = await fetch('/api/file/upload', { method: 'POST', body: form })
-  if (!res.ok) {
-    const err = await res.json()
-    throw new Error(err.detail || 'Upload failed')
-  }
-  return res.json()
-}
-
-export async function uploadProject(files: FileList): Promise<ProjectData> {
-  const form = new FormData()
-  for (const file of Array.from(files)) {
-    // webkitRelativePath 提供相对路径（含文件夹名）
-    form.append('files', file, file.webkitRelativePath)
-  }
-  const res = await fetch('/api/file/upload-project', { method: 'POST', body: form })
-  if (!res.ok) {
-    const err = await res.json()
-    throw new Error(err.detail || 'Project upload failed')
-  }
-  return res.json()
-}
-
-/** Expand a function's internal logic via LLM */
-export async function analyzeDetail(qualifiedName: string): Promise<FlowData> {
-  const res = await fetch('/api/graph/detail', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ qualified_name: qualifiedName }),
-  })
-  if (!res.ok) {
-    const err = await res.json()
-    throw new Error(err.detail || 'Detail analysis failed')
-  }
-  return res.json()
-}
-
-/** Semantic overview flowchart from AST skeleton + LLM (same format as old visualize) */
-export async function analyzeOverview(): Promise<FlowData> {
-  const res = await fetch('/api/graph/overview', { method: 'POST' })
-  if (!res.ok) {
-    const err = await res.json()
-    throw new Error(err.detail || 'Overview generation failed')
-  }
-  return res.json()
-}
-
-export async function generateHierarchicalSummary(): Promise<{
-  project_name: string
-  project_summary: string
-}> {
-  const res = await fetch('/api/summary/generate', { method: 'POST' })
-  if (!res.ok) {
-    const err = await res.json()
-    throw new Error(err.detail || 'Hierarchical summary generation failed')
-  }
-  return res.json()
-}
-
-export async function splitModules(): Promise<{ modules: { name: string; description: string; paths: string[] }[] }> {
-  const res = await fetch('/api/module/split', { method: 'POST' })
-  if (!res.ok) {
-    const err = await res.json()
-    throw new Error(err.detail || 'Module split failed')
-  }
-  return res.json()
-}
-
-export async function streamReview(
-  params: {
-    file_name: string
-    full_content: string
-    selected_code: string
-    start_line: number
-    end_line: number
-    action: string
-    project_mode?: boolean
-  },
-  onChunk: (text: string) => void,
-  onDone: () => void
-): Promise<void> {
-  const res = await fetch('/api/review', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(params),
-  })
-
-  if (!res.ok || !res.body) {
-    const text = await res.text()
-    onChunk(`Error: ${text}`)
-    onDone()
-    return
-  }
-
-  const reader = res.body.getReader()
-  const decoder = new TextDecoder()
-  let buffer = ''
-
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-
-    buffer += decoder.decode(value, { stream: true })
-    const lines = buffer.split('\n')
-    buffer = lines.pop() || ''
-
-    for (const line of lines) {
-      if (!line.startsWith('data: ')) continue
-      const data = line.slice(6)
-      if (data.trim() === '[DONE]') {
-        onDone()
-        return
-      }
-      try {
-        const text = JSON.parse(data)
-        onChunk(text)
-      } catch {
-        // If not JSON-wrapped, use raw text
-        if (data.trim()) onChunk(data)
-      }
+  if (files instanceof FileList) {
+    for (const f of Array.from(files)) {
+      form.append('files', f, f.webkitRelativePath || f.name)
+    }
+  } else {
+    for (const { path, file } of files) {
+      form.append('files', file, path)
     }
   }
-  onDone()
+  const res = await fetch('/api/file/upload-project', { method: 'POST', body: form })
+  return asJson<ProjectUploadResponse>(res, '项目上传失败')
+}
+
+export async function startWikiGeneration(projectName?: string): Promise<WikiGenerateResponse> {
+  const res = await fetch('/api/wiki/generate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ project_name: projectName ?? null }),
+  })
+  return asJson<WikiGenerateResponse>(res, '启动 Wiki 生成失败')
+}
+
+export async function getWikiTaskStatus(taskId: string): Promise<WikiTaskStatusResponse> {
+  const res = await fetch(`/api/wiki/status/${encodeURIComponent(taskId)}`)
+  return asJson<WikiTaskStatusResponse>(res, '查询任务状态失败')
+}
+
+export async function getWikiDocument(projectName: string): Promise<WikiDocument> {
+  const res = await fetch(`/api/wiki/${encodeURIComponent(projectName)}`)
+  return asJson<WikiDocument>(res, '获取 Wiki 文档失败')
+}
+
+/**
+ * 触发浏览器下载整份 Wiki 的 Markdown 版本。
+ */
+export async function downloadWikiMarkdown(projectName: string): Promise<void> {
+  const res = await fetch(`/api/wiki/${encodeURIComponent(projectName)}/export`)
+  if (!res.ok) {
+    let detail = '导出 Markdown 失败'
+    try {
+      const err = await res.json()
+      detail = err.detail || detail
+    } catch {
+      // ignore
+    }
+    throw new Error(detail)
+  }
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  // 优先用 Content-Disposition 的文件名；fallback 到 <project>.md
+  const disposition = res.headers.get('Content-Disposition') || ''
+  const match = disposition.match(/filename="([^"]+)"/)
+  a.download = match ? match[1] : `${projectName}.md`
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
+
+/**
+ * 轮询任务状态直至终止（done / failed），每 2s 一次。
+ * onUpdate 可选：用于把中间状态反馈给 UI。
+ *
+ * 对瞬时错误（网络抖动、后端热重启）做容错：连续 N 次失败才真正抛出。
+ */
+export async function pollWikiStatus(
+  taskId: string,
+  onUpdate?: (status: WikiTaskStatusResponse) => void,
+  intervalMs = 2000,
+  maxConsecutiveErrors = 5,
+): Promise<WikiTaskStatusResponse> {
+  let consecutiveErrors = 0
+  let lastError: unknown = null
+  while (true) {
+    try {
+      const status = await getWikiTaskStatus(taskId)
+      consecutiveErrors = 0
+      onUpdate?.(status)
+      if (status.status === 'done' || status.status === 'failed') {
+        return status
+      }
+    } catch (e) {
+      consecutiveErrors += 1
+      lastError = e
+      console.warn(
+        `[pollWikiStatus] 轮询错误 ${consecutiveErrors}/${maxConsecutiveErrors}:`,
+        e,
+      )
+      if (consecutiveErrors >= maxConsecutiveErrors) {
+        throw lastError instanceof Error
+          ? lastError
+          : new Error('轮询 Wiki 任务状态失败')
+      }
+    }
+    await new Promise((r) => setTimeout(r, intervalMs))
+  }
 }

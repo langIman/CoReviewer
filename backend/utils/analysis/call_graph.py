@@ -270,22 +270,98 @@ def _build_import_name_map(
     return name_map
 
 
+# ---------------------------------------------------------------------------
+# Naive name-set resolution (语言无关，作为各语言主路径之后的 fallback)
+# ---------------------------------------------------------------------------
+
+# 各语言"绝对不是项目方法"的名字——避免假阳性
+_NAIVE_BLACKLIST: dict[str, set[str]] = {
+    "python": {
+        "__init__", "__new__", "__del__",
+        "__str__", "__repr__", "__eq__", "__ne__", "__hash__",
+        "__lt__", "__le__", "__gt__", "__ge__",
+        "__getitem__", "__setitem__", "__delitem__", "__contains__",
+        "__len__", "__iter__", "__next__", "__reversed__",
+        "__enter__", "__exit__", "__call__",
+        "__getattr__", "__setattr__", "__delattr__",
+        "__add__", "__sub__", "__mul__", "__truediv__",
+    },
+    "java": {
+        "equals", "hashCode", "toString", "getClass",
+        "wait", "notify", "notifyAll", "clone", "finalize",
+    },
+    "rust": {
+        "fmt", "clone", "hash", "eq", "ne",
+        "partial_cmp", "cmp", "deref", "deref_mut",
+        "drop", "default", "from", "into",
+        "as_ref", "as_mut", "borrow", "borrow_mut",
+    },
+}
+
+
+def build_simple_name_table(
+    all_defs: dict[str, SymbolDef],
+) -> dict[str, list[str]]:
+    """从全部 definitions 构建：简单名 → qname 列表。
+
+    简单名 = SymbolDef.name 最后一段（去掉类前缀）。
+    例如 'UserServiceImpl.login' → 'login'。
+    """
+    table: dict[str, list[str]] = {}
+    for qname, defn in all_defs.items():
+        short = defn.name.split(".")[-1]
+        table.setdefault(short, []).append(qname)
+    return table
+
+
+def naive_name_resolve(
+    callee_name: str,
+    language: str | None,
+    simple_table: dict[str, list[str]],
+) -> str | None:
+    """V1：唯一命中才返回；多候选先跳过（不引入假阳性）。
+
+    黑名单的方法名（如 Java toString / Python __init__）一律不解析——
+    这些名字几乎不可能是项目自定义的，硬解析会污染统计。
+    """
+    if language and callee_name in _NAIVE_BLACKLIST.get(language, set()):
+        return None
+    cands = simple_table.get(callee_name)
+    if not cands or len(cands) > 1:
+        return None
+    return cands[0]
+
+
 def _resolve_call_edges(
     edges: list[CallEdge],
     file_path: str,
     source: str,
     project_files: dict[str, str],
     all_defs: dict[str, SymbolDef],
+    simple_table: dict[str, list[str]],
 ) -> None:
-    """Resolve callee_name to callee_resolved (qualified_name) where possible."""
+    """Resolve callee_name to callee_resolved (qualified_name) where possible.
+
+    解析顺序：
+    1. import 名查表（高置信，标 resolution_method='import'）
+    2. naive 简单名匹配兜底（标 resolution_method='naive'）
+    """
     name_map = _build_import_name_map(file_path, source, project_files, all_defs)
 
     for edge in edges:
         if edge.callee_resolved:
             continue
+        # 1. 主路径：import name_map
         resolved = name_map.get(edge.callee_name)
         if resolved and resolved in all_defs:
             edge.callee_resolved = resolved
+            edge.resolution_method = "import"
+            continue
+        # 2. fallback：naive 简单名匹配
+        resolved = naive_name_resolve(edge.callee_name, "python", simple_table)
+        if resolved:
+            edge.callee_resolved = resolved
+            edge.resolution_method = "naive"
 
 
 # ---------------------------------------------------------------------------
@@ -337,16 +413,24 @@ def build_call_graph(project_files: dict[str, str]) -> ProjectAST:
             calls = ts_extract_calls(file_path, source, graph.definitions, config)
             graph.edges.extend(calls)
 
-    # Step 3: Resolve call edges using import analysis
+    # Step 3: Resolve call edges
+    # 先一次性建项目简单名表，给所有 resolver 用作 naive fallback 查询的输入
+    simple_table = build_simple_name_table(graph.definitions)
     for file_path, source in project_files.items():
         lang = get_file_language(file_path)
         file_edges = [e for e in graph.edges if e.file == file_path]
         if not file_edges:
             continue
         if lang == "python":
-            _resolve_call_edges(file_edges, file_path, source, project_files, graph.definitions)
+            _resolve_call_edges(
+                file_edges, file_path, source, project_files,
+                graph.definitions, simple_table,
+            )
         elif lang and (config := get_lang_config(lang)):
-            ts_resolve_call_edges(file_edges, file_path, source, project_files, graph.definitions, config)
+            ts_resolve_call_edges(
+                file_edges, file_path, source, project_files,
+                graph.definitions, config, lang, simple_table,
+            )
 
     # Step 4: Build module-level dependency graph
     for file_path, source in project_files.items():

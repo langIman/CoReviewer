@@ -1,8 +1,22 @@
 import os
 
+
+def _parse_optional_bool(name: str) -> bool | None:
+    value = os.getenv(name)
+    if value is None or value.strip() == "":
+        return None
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    return None
+
+
 QWEN_API_KEY = os.getenv("QWEN_API_KEY", "")
 QWEN_BASE_URL = os.getenv("QWEN_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
 QWEN_MODEL = os.getenv("QWEN_MODEL", "qwen3.6-plus")
+QWEN_ENABLE_THINKING = _parse_optional_bool("QWEN_ENABLE_THINKING")
 
 MAX_FILE_SIZE = 1024 * 1024  # 1MB
 ALLOWED_EXTENSIONS = {
@@ -15,12 +29,13 @@ ALLOWED_EXTENSIONS = {
     ".md", ".txt", ".html", ".css", ".sql", ".sh", ".dockerfile",
 }
 # AST 静态分析支持的文件类型
-AST_EXTENSIONS = {".py", ".rs"}
+AST_EXTENSIONS = {".py", ".rs", ".java"}
 
 # 扩展名 → 语言标识映射
 _LANG_MAP: dict[str, str] = {
     ".py": "python",
     ".rs": "rust",
+    ".java": "java",
 }
 
 
@@ -42,6 +57,8 @@ MAX_PROJECT_FILES = 200
 SUMMARY_FUNC_LINES = 5          # 每个函数/类提取的行数
 SUMMARY_TRUNCATION_PERCENT = 0.3  # 文件截断上限（30%）
 
+# Wiki 模块页源码预算（字符数）；中英混合代码 ≈ 3 字符/token，90000 ≈ 30k tokens
+MODULE_CODE_BUDGET_CHARS = 90000
+
 # Agent 系统配置（从 services/agents/config.py 迁移）
 MAX_WORKER_CONCURRENCY = 5          # Worker 最大并发数
-DENSITY_THRESHOLD = 5.0             # 业务密度评分阈值

@@ -36,8 +36,8 @@ class LangConfig:
     language: Language
 
     # 节点类型映射
-    function_types: list[str]         # 顶层函数定义节点
-    class_types: list[str]            # 类/结构体/枚举/trait 等节点
+    function_types: list[str]         # 函数/方法定义节点（Java 为 method_declaration/constructor_declaration）
+    class_types: list[str]            # 类/结构体/枚举/trait/interface 等节点
     impl_type: str | None             # impl 块节点（如 Rust 的 impl_item）
     call_types: list[str]             # 调用表达式节点
     macro_call_type: str | None       # 宏调用节点（Rust 的 macro_invocation）
@@ -53,11 +53,17 @@ class LangConfig:
     doc_comment_prefix: str | None = None  # 文档注释前缀（如 "///"）
     skip_macros: set[str] = field(default_factory=set)
 
+    # 类内定义方法的语言（Java / TS / Kotlin）
+    class_has_methods: bool = False                           # True 时遍历 class body 抽方法
+    method_container_types: list[str] = field(default_factory=list)  # 类体中的中间容器（如 Java enum_body_declarations）
+
     # 语言特定回调
     format_signature: Callable[[SymbolDef], str] | None = None
     extract_imports: Callable | None = None
     resolve_imports: Callable | None = None
     detect_lang_entries: Callable | None = None
+    extract_callee: Callable | None = None                    # 覆盖默认调用节点抽取（Java method_invocation 等）
+    extract_decorators: Callable | None = None                # 覆盖默认装饰器收集（Java 注解在 modifiers 子节点里）
 
 
 # ---------------------------------------------------------------------------
@@ -182,16 +188,48 @@ def ts_extract_definitions(
             if defn:
                 defs.append(defn)
 
-        # 类/结构体/枚举/trait
+        # 类/结构体/枚举/trait/interface
         elif child.type in config.class_types:
-            defn = _build_class_def(child, file_path, config)
-            if defn:
-                defs.append(defn)
+            class_defn = _build_class_def(child, file_path, config)
+            if class_defn:
+                defs.append(class_defn)
+                # Java 类系语言：类体内直接包含方法，需要递归抽取
+                if config.class_has_methods:
+                    defs.extend(
+                        _extract_nested_methods(child, file_path, config, class_defn.name)
+                    )
 
         # impl 块（如 Rust）
         elif config.impl_type and child.type == config.impl_type:
             defs.extend(_build_impl_defs(child, file_path, config))
 
+    return defs
+
+
+def _extract_nested_methods(
+    class_node: Node, file_path: str, config: LangConfig, class_name: str
+) -> list[SymbolDef]:
+    """从类/接口/枚举体中抽取方法定义（Java 等类系语言）。
+
+    处理 Java enum 的一层间接容器 `enum_body_declarations`。
+    """
+    body = class_node.child_by_field_name(config.body_field)
+    if not body:
+        return []
+    defs: list[SymbolDef] = []
+    for item in body.children:
+        if not item.is_named:
+            continue
+        if item.type in config.function_types:
+            defn = _build_symbol_def(item, file_path, config, parent_name=class_name)
+            if defn:
+                defs.append(defn)
+        elif item.type in config.method_container_types:
+            for sub in item.children:
+                if sub.is_named and sub.type in config.function_types:
+                    defn = _build_symbol_def(sub, file_path, config, parent_name=class_name)
+                    if defn:
+                        defs.append(defn)
     return defs
 
 
@@ -208,14 +246,12 @@ def _build_symbol_def(
 
     if parent_name:
         full_name = f"{parent_name}.{raw_name}"
-        kind = "method"
+        kind = "method" if node.type != "constructor_declaration" else "constructor"
     else:
         full_name = raw_name
         kind = "async_function" if is_async else "function"
 
-    decorators: list[str] = []
-    if config.attr_type:
-        decorators = _collect_preceding_attrs(node, config.attr_type)
+    decorators = _collect_decorators(node, config)
 
     docstring = None
     if config.doc_comment_prefix:
@@ -236,6 +272,15 @@ def _build_symbol_def(
     )
 
 
+def _collect_decorators(node: Node, config: LangConfig) -> list[str]:
+    """统一装饰器/注解收集。优先走语言特定回调，否则走前序兄弟节点收集。"""
+    if config.extract_decorators:
+        return config.extract_decorators(node, config)
+    if config.attr_type:
+        return _collect_preceding_attrs(node, config.attr_type)
+    return []
+
+
 def _build_class_def(
     node: Node, file_path: str, config: LangConfig
 ) -> SymbolDef | None:
@@ -246,9 +291,7 @@ def _build_class_def(
 
     name = _node_text(name_node)
 
-    decorators: list[str] = []
-    if config.attr_type:
-        decorators = _collect_preceding_attrs(node, config.attr_type)
+    decorators = _collect_decorators(node, config)
 
     docstring = None
     if config.doc_comment_prefix:
@@ -311,7 +354,7 @@ def ts_extract_calls(
             return
         _walk_for_calls(body, qname, file_path, config, edges)
 
-    # 遍历所有顶层及 impl 中的函数
+    # 遍历所有顶层函数、impl 块和类内方法
     for child in root.children:
         if not child.is_named:
             continue
@@ -342,6 +385,32 @@ def ts_extract_calls(
                             )
                             process_function_node(item, qname)
 
+        elif config.class_has_methods and child.type in config.class_types:
+            class_name_node = child.child_by_field_name(config.name_field)
+            if not class_name_node:
+                continue
+            class_name = _node_text(class_name_node)
+            body = child.child_by_field_name(config.body_field)
+            if not body:
+                continue
+
+            def _walk_methods(body_node: Node) -> None:
+                for item in body_node.children:
+                    if not item.is_named:
+                        continue
+                    if item.type in config.function_types:
+                        name_node = item.child_by_field_name(config.name_field)
+                        if name_node:
+                            method_name = f"{class_name}.{_node_text(name_node)}"
+                            qname = _match_definition_qname(
+                                file_path, method_name, item.start_point[0] + 1, definitions
+                            )
+                            process_function_node(item, qname)
+                    elif item.type in config.method_container_types:
+                        _walk_methods(item)
+
+            _walk_methods(body)
+
     return edges
 
 
@@ -366,9 +435,16 @@ def _walk_for_calls(
     """递归遍历函数体，收集调用边。"""
     # 函数调用
     if node.type in config.call_types:
-        func_node = node.child_by_field_name("function")
-        if func_node:
-            callee_name, call_type = _extract_callee_info(func_node)
+        # 语言特定的调用节点（如 Java method_invocation）走回调
+        callee_info = None
+        if config.extract_callee:
+            callee_info = config.extract_callee(node)
+        else:
+            func_node = node.child_by_field_name("function")
+            if func_node:
+                callee_info = _extract_callee_info(func_node)
+        if callee_info:
+            callee_name, call_type = callee_info
             if callee_name:
                 edges.append(CallEdge(
                     caller=caller_qname,
@@ -464,17 +540,36 @@ def ts_resolve_call_edges(
     project_files: dict[str, str],
     all_defs: dict[str, SymbolDef],
     config: LangConfig,
+    language: str | None = None,
+    simple_table: dict[str, list[str]] | None = None,
 ) -> None:
-    """解析调用边中的 callee_name → callee_resolved。"""
+    """解析调用边中的 callee_name → callee_resolved。
+
+    解析顺序：
+    1. import 名查表（高置信，resolution_method='import'）
+    2. naive 简单名匹配兜底（resolution_method='naive'，仅当 simple_table 提供）
+    """
     name_map = ts_build_import_name_map(
         file_path, source, project_files, all_defs, config
     )
+    # 延迟 import 避免循环依赖（call_graph 已经 import 了 ts_parser）
+    from backend.utils.analysis.call_graph import naive_name_resolve
+
     for edge in edges:
         if edge.callee_resolved:
             continue
+        # 1. 主路径
         resolved = name_map.get(edge.callee_name)
         if resolved and resolved in all_defs:
             edge.callee_resolved = resolved
+            edge.resolution_method = "import"
+            continue
+        # 2. naive fallback
+        if simple_table is not None:
+            resolved = naive_name_resolve(edge.callee_name, language, simple_table)
+            if resolved:
+                edge.callee_resolved = resolved
+                edge.resolution_method = "naive"
 
 
 def ts_extract_imports(
@@ -792,6 +887,198 @@ def _detect_rust_entries(
                 break
 
     return entries
+
+
+# ===========================================================================
+# Java 语言配置
+# ===========================================================================
+
+
+def _format_java_signature(defn: SymbolDef) -> str:
+    params_str = ", ".join(defn.params)
+    return f"{defn.name}({params_str})"
+
+
+def _extract_java_decorators(node: Node, config: LangConfig) -> list[str]:
+    """Java 注解在 `modifiers` 子节点内，不是前序兄弟节点。"""
+    decorators: list[str] = []
+    for child in node.children:
+        if child.type == "modifiers":
+            for m in child.children:
+                if m.type in ("annotation", "marker_annotation"):
+                    text = _node_text(m).strip()
+                    if text:
+                        decorators.append(text)
+            break
+    return decorators
+
+
+def _extract_java_callee(call_node: Node) -> tuple[str, str] | None:
+    """Java method_invocation 没有 `function` 字段，用 `name` 字段直接取被调方法名。
+
+    带 object 的调用视作 attribute，否则 direct。
+    """
+    if call_node.type != "method_invocation":
+        return None
+    name_node = call_node.child_by_field_name("name")
+    if not name_node:
+        return None
+    method_name = _node_text(name_node)
+    call_type = "attribute" if call_node.child_by_field_name("object") else "direct"
+    return method_name, call_type
+
+
+def _extract_java_imports(root_node: Node) -> list[tuple[str, str]]:
+    """从 Java CST 提取 import 声明。
+
+    返回 (fqn, kind) 列表。kind: "single" / "wildcard"
+    """
+    imports: list[tuple[str, str]] = []
+    for child in root_node.children:
+        if child.type != "import_declaration":
+            continue
+        # 取 import_declaration 下第一个命名子节点作为路径
+        # 通常是 scoped_identifier 或 identifier（带 static 修饰时亦同）
+        path_node = None
+        has_asterisk = False
+        for c in child.children:
+            if c.is_named and c.type in ("scoped_identifier", "identifier"):
+                path_node = c
+            elif c.type == "asterisk":
+                has_asterisk = True
+        if not path_node:
+            continue
+        fqn = _node_text(path_node)
+        kind = "wildcard" if has_asterisk else "single"
+        imports.append((fqn, kind))
+    return imports
+
+
+def _resolve_java_imports(
+    imports: list[tuple[str, str]],
+    current_file: str,
+    project_files: dict[str, str],
+) -> list[tuple[str, str, str]]:
+    """Java import → 项目文件。
+
+    - `import com.example.Foo;` → 查找路径以 `com/example/Foo.java` 结尾的文件
+    - `import com.example.*;`   → 查找该包下所有 .java 文件（返回每个类）
+    返回 (imported_name, target_file, symbol_name) 列表。
+    """
+    results: list[tuple[str, str, str]] = []
+    for fqn, kind in imports:
+        if kind == "single":
+            parts = fqn.split(".")
+            if not parts:
+                continue
+            class_name = parts[-1]
+            path_suffix = "/".join(parts) + ".java"
+            target = _find_java_file_by_suffix(path_suffix, project_files)
+            if target:
+                results.append((class_name, target, class_name))
+        elif kind == "wildcard":
+            # import com.example.*;
+            parts = fqn.split(".")
+            dir_suffix = "/".join(parts) + "/"
+            for pf in project_files:
+                if not pf.endswith(".java"):
+                    continue
+                # 匹配：项目文件的父目录恰好以 dir_suffix 结尾
+                parent_dir = pf.rsplit("/", 1)[0] + "/"
+                if parent_dir.endswith(dir_suffix):
+                    class_name = pf.rsplit("/", 1)[1][: -len(".java")]
+                    results.append((class_name, pf, class_name))
+    return results
+
+
+def _find_java_file_by_suffix(path_suffix: str, project_files: dict[str, str]) -> str | None:
+    """查找 project_files 中以 path_suffix 结尾的文件（或完全匹配）。"""
+    if path_suffix in project_files:
+        return path_suffix
+    # 精确后缀匹配（以 / 分隔避免 Foo.java 匹配到 BarFoo.java）
+    needle = "/" + path_suffix
+    for pf in project_files:
+        if pf.endswith(needle) or pf == path_suffix:
+            return pf
+    return None
+
+
+def _detect_java_entries(
+    definitions: dict[str, SymbolDef],
+    project_files: dict[str, str],
+) -> list[str]:
+    """检测 Java 入口点：`main` 方法、Spring/JAX-RS 等 Web 注解。"""
+    entries: list[str] = []
+
+    entry_annotations = {
+        "@springbootapplication",
+        "@restcontroller", "@controller", "@service", "@component",
+        "@repository", "@configuration",
+        "@requestmapping", "@getmapping", "@postmapping",
+        "@putmapping", "@deletemapping", "@patchmapping",
+        "@path",   # JAX-RS
+        "@webservlet", "@weblistener", "@webfilter",
+        "@scheduled",
+    }
+
+    for qname, defn in definitions.items():
+        if not defn.file.endswith(".java"):
+            continue
+
+        # main 方法：名字以 .main 结尾且参数含 String[]
+        if defn.kind in ("method",) and defn.name.endswith(".main"):
+            params_text = " ".join(defn.params)
+            if "String[]" in params_text or "String ..." in params_text:
+                entries.append(qname)
+                continue
+
+        # 注解驱动的入口
+        hit = False
+        for attr in defn.decorators:
+            # 去掉参数：@Foo(bar) → @foo
+            attr_lower = attr.lower()
+            attr_head = attr_lower.split("(", 1)[0].strip()
+            if attr_head in entry_annotations:
+                entries.append(qname)
+                hit = True
+                break
+        if hit:
+            continue
+
+    return entries
+
+
+# 注册 Java
+try:
+    import tree_sitter_java as _ts_java
+
+    _JAVA_LANG = Language(_ts_java.language())
+    _JAVA_CONFIG = LangConfig(
+        language=_JAVA_LANG,
+        function_types=["method_declaration", "constructor_declaration"],
+        class_types=["class_declaration", "interface_declaration", "enum_declaration"],
+        impl_type=None,
+        call_types=["method_invocation"],
+        macro_call_type=None,
+        import_types=["import_declaration"],
+        name_field="name",
+        params_field="parameters",
+        body_field="body",
+        attr_type=None,                 # 注解在 modifiers 子节点里，不走默认前序兄弟逻辑
+        doc_comment_prefix=None,        # Javadoc 暂未接入
+        class_has_methods=True,
+        method_container_types=["enum_body_declarations"],
+        format_signature=_format_java_signature,
+        extract_imports=_extract_java_imports,
+        resolve_imports=_resolve_java_imports,
+        detect_lang_entries=_detect_java_entries,
+        extract_callee=_extract_java_callee,
+        extract_decorators=_extract_java_decorators,
+    )
+    register_language("java", _JAVA_CONFIG)
+    logger.info("Java language support registered via tree-sitter")
+except ImportError:
+    logger.warning("tree-sitter-java not installed, Java support disabled")
 
 
 # 注册 Rust

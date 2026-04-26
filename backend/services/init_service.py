@@ -6,10 +6,10 @@
 
 import logging
 
-from backend.dao.graph_cache import invalidate_cache
 from backend.dao.ast_store import clear_project_ast
 from backend.dao.summary_store import clear_project_summaries
-from backend.utils.analysis.ast_service import get_or_build_ast
+from backend.dao.wiki_store import clear_project_wiki
+from backend.utils.analysis.ast_service import get_or_build_ast, invalidate_ast_cache
 
 logger = logging.getLogger(__name__)
 
@@ -21,9 +21,10 @@ def initialize_project(project_name: str) -> None:
     2. 构建 AST（调用图 + 入口检测 + 持久化到 SQLite）
     """
     # 1. 清理
-    invalidate_cache()
+    invalidate_ast_cache()
     clear_project_ast(project_name)
     clear_project_summaries(project_name)
+    clear_project_wiki(project_name)
     logger.info("Old data cleared for project: %s", project_name)
 
     # 2. 构建 AST

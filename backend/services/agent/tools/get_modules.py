@@ -29,7 +29,7 @@ class GetModulesTool(BaseTool):
             "properties": {
                 "path": {
                     "type": "string",
-                    "description": "按文件路径过滤，如 'backend/services/review_service.py'",
+                    "description": "按文件路径过滤，如 'backend/services/file_service.py'",
                 },
             },
             "required": [],

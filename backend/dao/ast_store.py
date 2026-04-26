@@ -43,7 +43,8 @@ def save_project_ast(project_name: str, ast_model: ProjectAST) -> None:
         for edge in ast_model.edges:
             conn.execute(
                 "INSERT INTO call_edges (caller, callee_name, callee_resolved, file, line, "
-                "call_type, project_name) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "call_type, resolution_method, project_name) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     edge.caller,
                     edge.callee_name,
@@ -51,6 +52,7 @@ def save_project_ast(project_name: str, ast_model: ProjectAST) -> None:
                     edge.file,
                     edge.line,
                     edge.call_type,
+                    edge.resolution_method,
                     project_name,
                 ),
             )
@@ -107,8 +109,8 @@ def load_project_ast(project_name: str) -> ProjectAST | None:
 
         # call_edges
         rows = conn.execute(
-            "SELECT caller, callee_name, callee_resolved, file, line, call_type "
-            "FROM call_edges WHERE project_name = ?",
+            "SELECT caller, callee_name, callee_resolved, file, line, call_type, "
+            "resolution_method FROM call_edges WHERE project_name = ?",
             (project_name,),
         ).fetchall()
 
@@ -120,6 +122,7 @@ def load_project_ast(project_name: str) -> ProjectAST | None:
                 file=r[3],
                 line=r[4],
                 call_type=r[5],
+                resolution_method=r[6],
             )
             for r in rows
         ]
