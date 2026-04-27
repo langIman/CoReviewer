@@ -23,8 +23,13 @@ class SpawnAgentTool(BaseTool):
     以独立的上下文运行主循环，返回最终回复。
     """
 
-    def __init__(self, parent_tools: list | None = None) -> None:
+    def __init__(
+        self,
+        parent_tools: list | None = None,
+        parent_enable_thinking: bool | None = None,
+    ) -> None:
         self._parent_tools = parent_tools or []
+        self._parent_enable_thinking = parent_enable_thinking
 
     @property
     def name(self) -> str:
@@ -64,6 +69,7 @@ class SpawnAgentTool(BaseTool):
             system_prompt=system_prompt,
             tools=child_tools,
             max_iterations=5,
+            enable_thinking=self._parent_enable_thinking,
         )
 
         logger.info("Spawning child agent with %d tools", len(child_tools))

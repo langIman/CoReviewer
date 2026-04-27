@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from collections.abc import AsyncGenerator
 from typing import Any
 
@@ -33,9 +34,11 @@ class Agent:
         system_prompt: str,
         tools: list[BaseTool | Tool] | None = None,
         max_iterations: int = DEFAULT_MAX_ITERATIONS,
+        enable_thinking: bool | None = None,
     ) -> None:
         self._system_prompt = system_prompt
         self._max_iterations = max_iterations
+        self._enable_thinking = enable_thinking
         self._context = Context(system_prompt)
 
         # 构建工具列表
@@ -43,11 +46,14 @@ class Agent:
         # tools=[]   → 无工具（纯对话模式）
         # tools=[..]  → 用户工具 + 自动注入 SpawnAgentTool
         if tools is None:
-            self._tools: list[BaseTool | Tool] = [SpawnAgentTool()]
+            self._tools: list[BaseTool | Tool] = [SpawnAgentTool(parent_enable_thinking=enable_thinking)]
         else:
             self._tools = list(tools)
             if self._tools and not any(isinstance(t, SpawnAgentTool) for t in self._tools):
-                self._tools.append(SpawnAgentTool(parent_tools=self._tools))
+                self._tools.append(SpawnAgentTool(
+                    parent_tools=self._tools,
+                    parent_enable_thinking=enable_thinking,
+                ))
 
         self._tool_map: dict[str, BaseTool | Tool] = {t.name: t for t in self._tools}
 
@@ -70,16 +76,24 @@ class Agent:
         self._context.add_user(user_input)
 
         assistant_message: dict[str, Any] = {}
+        run_started = time.monotonic()
 
         for iteration in range(self._max_iterations):
-            logger.debug("Agent loop iteration %d/%d", iteration + 1, self._max_iterations)
+            logger.info(
+                "Agent iter %d/%d start (elapsed=%.1fs)",
+                iteration + 1, self._max_iterations, time.monotonic() - run_started,
+            )
 
             # 1. 上下文组装
             messages = self._context.to_messages()
             tool_defs = self._get_tool_definitions()
 
             # 2. 模型决策
-            assistant_message = await call_llm(messages, tools=tool_defs)
+            llm_started = time.monotonic()
+            assistant_message = await call_llm(
+                messages, tools=tool_defs, enable_thinking=self._enable_thinking,
+            )
+            llm_elapsed = time.monotonic() - llm_started
             self._context.add_assistant(assistant_message)
 
             # 3. 工具执行 + 结果注入
@@ -87,11 +101,24 @@ class Agent:
             if not tool_calls:
                 # 5. 停止
                 content = assistant_message.get("content", "")
-                logger.info("Agent completed in %d iteration(s)", iteration + 1)
+                logger.info(
+                    "Agent completed: iters=%d total=%.1fs (last_llm=%.1fs)",
+                    iteration + 1, time.monotonic() - run_started, llm_elapsed,
+                )
                 return content or ""
 
+            tool_names = [tc["function"]["name"] for tc in tool_calls]
+            logger.info(
+                "Agent iter %d llm=%.1fs → tool_calls=%s",
+                iteration + 1, llm_elapsed, tool_names,
+            )
             for tool_call in tool_calls:
+                tool_started = time.monotonic()
                 result = await self._execute_tool(tool_call)
+                logger.info(
+                    "Tool %s done in %.1fs",
+                    tool_call["function"]["name"], time.monotonic() - tool_started,
+                )
                 self._context.add_tool_result(
                     tool_call_id=tool_call["id"],
                     name=tool_call["function"]["name"],
@@ -100,7 +127,10 @@ class Agent:
             # 5. 继续
 
         # 安全阀
-        logger.warning("Agent hit max iterations (%d)", self._max_iterations)
+        logger.warning(
+            "Agent hit max iterations (%d) total=%.1fs",
+            self._max_iterations, time.monotonic() - run_started,
+        )
         return assistant_message.get("content", "") or "[Agent 达到最大迭代次数]"
 
     async def stream_run(self, user_input: str) -> AsyncGenerator[str, None]:

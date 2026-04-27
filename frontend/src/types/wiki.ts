@@ -65,10 +65,35 @@ export interface WikiGenerateResponse {
 
 export type WikiTaskStatus = 'pending' | 'running' | 'done' | 'failed'
 
+export type WikiProgressStage =
+  | 'file_summary'
+  | 'folder_summary'
+  | 'project_summary'
+  | 'module_split'
+  | 'outline'
+  | 'module_page'
+  | 'chapter_page'
+  | 'topic_page'
+  | 'overview'
+
+export type WikiProgressEventStatus = 'running' | 'done' | 'failed'
+
+export interface WikiProgressEvent {
+  event_id: string
+  stage: WikiProgressStage
+  item: string | null
+  status: WikiProgressEventStatus
+  started_at: string
+  finished_at?: string | null
+  duration_ms?: number | null
+  error?: string | null
+}
+
 export interface WikiTaskStatusResponse {
   task_id: string
   status: WikiTaskStatus
   project_name: string
   message?: string | null
   created_at: string
+  events?: WikiProgressEvent[]
 }

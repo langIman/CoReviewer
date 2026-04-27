@@ -16,6 +16,9 @@ frontend/dist/
 # SQLite 数据库（运行时生成）
 *.db
 
+# 后端运行日志
+logs/
+
 # IDE
 .vscode/
 .idea/

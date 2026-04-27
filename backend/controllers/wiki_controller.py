@@ -21,6 +21,11 @@ from pydantic import BaseModel
 from backend.dao.file_store import get_project_name
 from backend.dao.wiki_store import load_wiki_document
 from backend.models.wiki_models import WikiDocument
+from backend.services.progress_reporter import (
+    WikiProgressEvent,
+    WikiProgressReporter,
+    set_reporter,
+)
 from backend.services.wiki.exporter import export_to_markdown
 from backend.services.wiki_service import generate_wiki
 
@@ -51,10 +56,15 @@ class WikiTaskStatus(BaseModel):
     project_name: str
     message: str | None = None
     created_at: str
+    events: list[WikiProgressEvent] = []
 
 
 async def _run_generation(task_id: str, project_name: str) -> None:
     """背景协程：跑完整 eager 流水线，更新任务状态。"""
+    reporter = WikiProgressReporter()
+    _tasks[task_id]["reporter"] = reporter
+    set_reporter(reporter)  # ContextVar 在当前 BackgroundTask 上下文内传递
+
     _tasks[task_id]["status"] = "running"
     try:
         await generate_wiki(project_name)
@@ -95,12 +105,15 @@ async def get_status(task_id: str) -> WikiTaskStatus:
     task = _tasks.get(task_id)
     if task is None:
         raise HTTPException(status_code=404, detail=f"Task not found: {task_id}")
+    reporter: WikiProgressReporter | None = task.get("reporter")
+    events = reporter.snapshot() if reporter is not None else []
     return WikiTaskStatus(
         task_id=task_id,
         status=task["status"],
         project_name=task["project_name"],
         message=task.get("message"),
         created_at=task["created_at"],
+        events=events,
     )
 
 

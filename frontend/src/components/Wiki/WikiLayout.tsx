@@ -9,8 +9,17 @@ import ThemeToggle from '../common/ThemeToggle'
 import NavTree from './NavTree'
 import WikiPageView from './WikiPageView'
 
+function formatDuration(ms: number): string {
+  const total = Math.max(0, Math.round(ms / 1000))
+  const m = Math.floor(total / 60)
+  const s = total % 60
+  if (m === 0) return `${s}s`
+  return `${m}m ${String(s).padStart(2, '0')}s`
+}
+
 export default function WikiLayout() {
   const projectName = useWikiStore((s) => s.projectName)
+  const lastGenerationDurationMs = useWikiStore((s) => s.lastGenerationDurationMs)
   const reset = useWikiStore((s) => s.reset)
   const resetQA = useQAStore((s) => s.reset)
   const [exporting, setExporting] = useState(false)
@@ -46,6 +55,14 @@ export default function WikiLayout() {
                 {projectName}
               </code>
             </>
+          )}
+          {lastGenerationDurationMs !== null && (
+            <span
+              className="ml-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800"
+              title="本次生成耗时"
+            >
+              ⏱ 生成耗时 {formatDuration(lastGenerationDurationMs)}
+            </span>
           )}
         </div>
 

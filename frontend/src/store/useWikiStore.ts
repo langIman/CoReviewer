@@ -1,6 +1,6 @@
 import { create } from 'zustand'
-import type { CodeRef, WikiDocument, WikiPage, WikiTaskStatus } from '../types/wiki'
-import { getWikiDocument } from '../services/api'
+import type { CodeRef, WikiDocument, WikiPage, WikiProgressEvent, WikiTaskStatus } from '../types/wiki'
+import { getPersistedProject, getWikiDocument } from '../services/api'
 
 interface CodeDrawerState {
   open: boolean
@@ -33,6 +33,8 @@ interface WikiStore {
   generateTaskId: string | null
   generateStatus: 'idle' | WikiTaskStatus
   generateMessage: string | null
+  generateEvents: WikiProgressEvent[]
+  lastGenerationDurationMs: number | null
 
   wiki: WikiDocument | null
   currentPageId: string | null
@@ -45,6 +47,8 @@ interface WikiStore {
   setProject: (name: string, files: Record<string, string>) => void
   setGenerateTaskId: (id: string | null) => void
   setGenerateStatus: (status: 'idle' | WikiTaskStatus, message?: string | null) => void
+  setGenerateEvents: (events: WikiProgressEvent[]) => void
+  setLastGenerationDurationMs: (ms: number | null) => void
   setWiki: (doc: WikiDocument) => void
 
   rehydrateFromStorage: () => Promise<void>
@@ -64,6 +68,8 @@ export const useWikiStore = create<WikiStore>((set, get) => ({
   generateTaskId: null,
   generateStatus: 'idle',
   generateMessage: null,
+  generateEvents: [],
+  lastGenerationDurationMs: null,
 
   wiki: null,
   currentPageId: null,
@@ -83,10 +89,22 @@ export const useWikiStore = create<WikiStore>((set, get) => ({
     if (!name) return
     set({ rehydrating: true, projectName: name })
     try {
-      const doc = await getWikiDocument(name)
+      // 并发拉 wiki 文档和项目源码：wiki 必须有，源码缺失只关闭 drawer 不致命
+      const [doc, projectRes] = await Promise.all([
+        getWikiDocument(name),
+        getPersistedProject(name).catch((e) => {
+          console.warn('[rehydrateFromStorage] 项目源码加载失败，drawer 将不可用:', e)
+          return null
+        }),
+      ])
+      const filesMap: Record<string, string> = {}
+      if (projectRes) {
+        for (const f of projectRes.files) filesMap[f.path] = f.content
+      }
       set({
         wiki: doc,
         currentPageId: doc.index.root,
+        projectFiles: filesMap,
       })
     } catch (e) {
       console.warn('[rehydrateFromStorage] 加载已保存项目失败，回退到上传页:', e)
@@ -100,6 +118,8 @@ export const useWikiStore = create<WikiStore>((set, get) => ({
   setGenerateTaskId: (id) => set({ generateTaskId: id }),
   setGenerateStatus: (status, message = null) =>
     set({ generateStatus: status, generateMessage: message }),
+  setGenerateEvents: (events) => set({ generateEvents: events }),
+  setLastGenerationDurationMs: (ms) => set({ lastGenerationDurationMs: ms }),
 
   setWiki: (doc) =>
     set({
@@ -142,6 +162,8 @@ export const useWikiStore = create<WikiStore>((set, get) => ({
       generateTaskId: null,
       generateStatus: 'idle',
       generateMessage: null,
+      generateEvents: [],
+      lastGenerationDurationMs: null,
       wiki: null,
       currentPageId: null,
       codeDrawer: { open: false, ref: null },

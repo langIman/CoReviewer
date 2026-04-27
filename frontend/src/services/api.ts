@@ -53,6 +53,11 @@ export async function getWikiDocument(projectName: string): Promise<WikiDocument
   return asJson<WikiDocument>(res, '获取 Wiki 文档失败')
 }
 
+export async function getPersistedProject(projectName: string): Promise<ProjectUploadResponse> {
+  const res = await fetch(`/api/file/project/${encodeURIComponent(projectName)}`)
+  return asJson<ProjectUploadResponse>(res, '加载项目源码失败')
+}
+
 /**
  * 触发浏览器下载整份 Wiki 的 Markdown 版本。
  */

@@ -2,17 +2,44 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useWikiStore } from '../../store/useWikiStore'
 import { getWikiDocument, pollWikiStatus, startWikiGeneration, uploadProject } from '../../services/api'
 import ThemeToggle from '../common/ThemeToggle'
+import WikiProgressTimeline from './WikiProgressTimeline'
 
 type Phase = 'idle' | 'uploading' | 'generating' | 'loading' | 'error'
 
+function formatElapsed(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000))
+  const m = Math.floor(total / 60)
+  const s = total % 60
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+}
+
 export default function UploadView() {
-  const { setProject, setGenerateTaskId, setGenerateStatus, setWiki } = useWikiStore()
+  const {
+    setProject,
+    setGenerateTaskId,
+    setGenerateStatus,
+    setGenerateEvents,
+    setWiki,
+    setLastGenerationDurationMs,
+  } = useWikiStore()
   const projectName = useWikiStore((s) => s.projectName)
+  const generateEvents = useWikiStore((s) => s.generateEvents)
+  const [eventsReceivedAt, setEventsReceivedAt] = useState<number>(() => Date.now())
   const folderInputRef = useRef<HTMLInputElement>(null)
   const [phase, setPhase] = useState<Phase>('idle')
   const [message, setMessage] = useState<string>('')
   const [dragging, setDragging] = useState(false)
   const [, setDragCounter] = useState(0)
+  const [startedAt, setStartedAt] = useState<number | null>(null)
+  const [elapsedMs, setElapsedMs] = useState<number>(0)
+
+  useEffect(() => {
+    if (startedAt === null) return
+    const tick = () => setElapsedMs(Date.now() - startedAt)
+    tick()
+    const id = window.setInterval(tick, 1000)
+    return () => window.clearInterval(id)
+  }, [startedAt])
 
   const loadExistingWiki = useCallback(
     async (name: string) => {
@@ -45,6 +72,10 @@ export default function UploadView() {
 
   const runPipeline = useCallback(
     async (files: FileList | { path: string; file: File }[]) => {
+      const pipelineStart = Date.now()
+      setStartedAt(pipelineStart)
+      setElapsedMs(0)
+      setLastGenerationDurationMs(null)
       try {
         setPhase('uploading')
         setMessage('上传项目文件...')
@@ -60,8 +91,12 @@ export default function UploadView() {
         setGenerateStatus('pending')
 
         setMessage('正在分析项目结构（概览页 + 模块页）...')
+        setGenerateEvents([])
+        setEventsReceivedAt(Date.now())
         const final = await pollWikiStatus(task.task_id, (s) => {
           setGenerateStatus(s.status, s.message)
+          setGenerateEvents(s.events ?? [])
+          setEventsReceivedAt(Date.now())
           if (s.status === 'running') setMessage('LLM 生成中...')
         })
         if (final.status === 'failed') {
@@ -71,14 +106,18 @@ export default function UploadView() {
         setPhase('loading')
         setMessage('加载 Wiki 文档...')
         const doc = await getWikiDocument(uploaded.project_name)
+        const totalMs = Date.now() - pipelineStart
+        setLastGenerationDurationMs(totalMs)
+        setStartedAt(null)
         setWiki(doc)
       } catch (err) {
         console.error('[runPipeline] 流水线失败:', err)
+        setStartedAt(null)
         setPhase('error')
         setMessage(err instanceof Error ? err.message : '未知错误')
       }
     },
-    [setProject, setGenerateTaskId, setGenerateStatus, setWiki]
+    [setProject, setGenerateTaskId, setGenerateStatus, setGenerateEvents, setWiki, setLastGenerationDurationMs]
   )
 
   const handleFolderSelect = useCallback(
@@ -170,9 +209,24 @@ export default function UploadView() {
               <div className="flex flex-col items-center gap-3 py-4">
                 <div className="w-8 h-8 border-3 border-blue-500 border-t-transparent rounded-full animate-spin" />
                 <p className="text-sm text-gray-600 dark:text-gray-300">{message}</p>
-                <p className="text-xs text-gray-400 dark:text-gray-500">
-                  中大项目可能需要 30 秒到几分钟
-                </p>
+                <div
+                  className="font-mono text-2xl tabular-nums text-blue-600 dark:text-blue-300 tracking-wider"
+                  aria-live="polite"
+                >
+                  ⏱ {formatElapsed(elapsedMs)}
+                </div>
+                {phase === 'generating' && (
+                  <WikiProgressTimeline
+                    events={generateEvents}
+                    nowMs={Date.now()}
+                    eventsReceivedAt={eventsReceivedAt}
+                  />
+                )}
+                {phase !== 'generating' && (
+                  <p className="text-xs text-gray-400 dark:text-gray-500">
+                    中大项目可能需要 30 秒到几分钟
+                  </p>
+                )}
               </div>
             )}
 

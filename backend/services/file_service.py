@@ -10,6 +10,7 @@ from backend.dao.file_store import (
     validate_file, store_file, store_project,
     get_project_files, get_project_name, set_project_summary,
 )
+from backend.dao.project_file_persist import load_project_files, save_project_files
 from backend.services.init_service import initialize_project
 from backend.services.llm.llm_service import call_qwen
 from backend.services.llm.prompts.summary import build_summary_prompt
@@ -60,8 +61,28 @@ async def upload_project_files(files: list[UploadFile]) -> ProjectUploadResponse
     project_name = first_parts[0] if first_parts else "project"
 
     store_project(project_name, project_files)
+    save_project_files(project_name, project_files)
     initialize_project(project_name)
 
+    return ProjectUploadResponse(project_name=project_name, files=file_infos)
+
+
+def get_persisted_project(project_name: str) -> ProjectUploadResponse:
+    """从 SQLite 读回上传时落盘的源文件。
+
+    顺手把内存态（_project_store / _project_name）也填回来，让后端
+    重启 + 前端 rehydrate 之后，drawer / QA / 重新生成都能跑。
+    """
+    files = load_project_files(project_name)
+    if not files:
+        raise HTTPException(status_code=404, detail=f"No persisted files for project '{project_name}'")
+
+    store_project(project_name, files)
+
+    file_infos = [
+        ProjectFileInfo(path=p, content=c, line_count=c.count("\n") + 1)
+        for p, c in files.items()
+    ]
     return ProjectUploadResponse(project_name=project_name, files=file_infos)
 
 

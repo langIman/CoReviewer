@@ -12,6 +12,7 @@ from backend.services.llm.prompts.summary_prompts import (
     build_folder_summary_prompt,
     build_project_summary_prompt,
 )
+from backend.services.progress_reporter import get_reporter
 from backend.config import MAX_WORKER_CONCURRENCY
 
 logger = logging.getLogger(__name__)
@@ -113,23 +114,24 @@ async def _generate_single_file_summary(
 ) -> tuple[str, str]:
     """生成单个文件的摘要，含重传机制。"""
     async with semaphore:
-        # 第一次：用骨架
-        skeleton = extract_file_skeleton(content, file_path=file_path)
-        system, user = build_file_summary_prompt(file_path, skeleton)
-        summary = await call_qwen(system, user, enable_thinking=False)
-
-        if INSUFFICIENT_INFO in summary:
-            # 重传：用完整内容
-            logger.info("File %s: retrying with full content", file_path)
-            system, user = build_file_summary_prompt(file_path, content)
+        async with get_reporter().track("file_summary", file_path):
+            # 第一次：用骨架
+            skeleton = extract_file_skeleton(content, file_path=file_path)
+            system, user = build_file_summary_prompt(file_path, skeleton)
             summary = await call_qwen(system, user, enable_thinking=False)
 
             if INSUFFICIENT_INFO in summary:
-                summary = "该文件/LLM出错"
+                # 重传：用完整内容
+                logger.info("File %s: retrying with full content", file_path)
+                system, user = build_file_summary_prompt(file_path, content)
+                summary = await call_qwen(system, user, enable_thinking=False)
 
-        save_summary(file_path, "file", summary, project_name)
-        logger.info("File summary done: %s", file_path)
-        return file_path, summary
+                if INSUFFICIENT_INFO in summary:
+                    summary = "该文件/LLM出错"
+
+            save_summary(file_path, "file", summary, project_name)
+            logger.info("File summary done: %s", file_path)
+            return file_path, summary
 
 
 async def _generate_folder_summary(
@@ -138,19 +140,20 @@ async def _generate_folder_summary(
     project_name: str,
 ) -> str:
     """生成文件夹摘要，含重传机制。"""
-    system, user = build_folder_summary_prompt(folder_path, child_summaries)
-    summary = await call_qwen(system, user, enable_thinking=False)
-
-    if INSUFFICIENT_INFO in summary:
-        # 重传
-        logger.info("Folder %s: retrying", folder_path)
+    async with get_reporter().track("folder_summary", folder_path):
+        system, user = build_folder_summary_prompt(folder_path, child_summaries)
         summary = await call_qwen(system, user, enable_thinking=False)
-        if INSUFFICIENT_INFO in summary:
-            summary = "该文件夹/LLM出错"
 
-    save_summary(folder_path, "folder", summary, project_name)
-    logger.info("Folder summary done: %s", folder_path)
-    return summary
+        if INSUFFICIENT_INFO in summary:
+            # 重传
+            logger.info("Folder %s: retrying", folder_path)
+            summary = await call_qwen(system, user, enable_thinking=False)
+            if INSUFFICIENT_INFO in summary:
+                summary = "该文件夹/LLM出错"
+
+        save_summary(folder_path, "folder", summary, project_name)
+        logger.info("Folder summary done: %s", folder_path)
+        return summary
 
 
 async def generate_hierarchical_summary() -> dict:
@@ -234,15 +237,16 @@ async def generate_hierarchical_summary() -> dict:
             name = file_path.rsplit("/", 1)[-1]
             top_summaries.append((name, file_summary_map.get(file_path, "")))
 
-    system, user = build_project_summary_prompt(project_name, top_summaries)
-    project_summary = await call_qwen(system, user, enable_thinking=False)
-
-    if INSUFFICIENT_INFO in project_summary:
+    async with get_reporter().track("project_summary", None):
+        system, user = build_project_summary_prompt(project_name, top_summaries)
         project_summary = await call_qwen(system, user, enable_thinking=False)
-        if INSUFFICIENT_INFO in project_summary:
-            project_summary = "该项目/LLM出错"
 
-    save_summary(project_name, "project", project_summary, project_name)
+        if INSUFFICIENT_INFO in project_summary:
+            project_summary = await call_qwen(system, user, enable_thinking=False)
+            if INSUFFICIENT_INFO in project_summary:
+                project_summary = "该项目/LLM出错"
+
+        save_summary(project_name, "project", project_summary, project_name)
 
     return {
         "project_name": project_name,

@@ -7,10 +7,12 @@ dev:
 	@make frontend
 
 backend:
-	PYTHONPATH=. uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
+	@mkdir -p logs
+	PYTHONPATH=. uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000 2>&1 | tee logs/backend.log
 
 frontend:
-	cd frontend && npm run dev
+	@mkdir -p logs
+	cd frontend && npm run dev 2>&1 | tee ../logs/frontend.log
 
 install:
 	pip install -r backend/requirements.txt

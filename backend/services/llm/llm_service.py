@@ -1,8 +1,10 @@
 from collections.abc import AsyncGenerator
 
+import asyncio
 import httpx
 import json
 import logging
+import time
 
 from fastapi import HTTPException
 
@@ -34,6 +36,43 @@ def _apply_qwen_options(payload: dict, enable_thinking: bool | None = None) -> N
         payload["enable_thinking"] = effective
 
 
+# ---------------- 网关瞬时错误重试（5xx / 524 等） -----------
+
+_RETRY_STATUSES = {502, 503, 504, 524}
+_RETRY_DELAYS = (5.0, 15.0, 45.0)  # 总最坏 65s 退避
+
+
+async def _post_with_retry(
+    client: httpx.AsyncClient,
+    url: str,
+    headers: dict,
+    payload: dict,
+    *,
+    op: str,
+) -> httpx.Response:
+    """非流式 POST，遇到 ``_RETRY_STATUSES`` 自动指数退避重试。
+
+    适用于 ``call_qwen`` / ``call_llm`` 这类幂等的 chat completion 请求——
+    Cloudflare 524（origin 超时）和 502/503/504 都是网关侧瞬时故障，重试通常能过。
+    流式接口不走这条路径（已部分消费，不能简单重发）。
+    """
+    last_resp: httpx.Response | None = None
+    for attempt in range(len(_RETRY_DELAYS) + 1):
+        resp = await client.post(url, json=payload, headers=headers)
+        if resp.status_code not in _RETRY_STATUSES:
+            return resp
+        last_resp = resp
+        if attempt == len(_RETRY_DELAYS):
+            break  # 重试用尽
+        delay = _RETRY_DELAYS[attempt]
+        logger.warning(
+            "[%s] gateway %d, retry %d/%d after %.0fs",
+            op, resp.status_code, attempt + 1, len(_RETRY_DELAYS), delay,
+        )
+        await asyncio.sleep(delay)
+    return last_resp  # 最后一次失败的响应（让调用方走原本的错误处理）
+
+
 async def call_qwen(
     system_prompt: str,
     user_prompt: str,
@@ -63,7 +102,7 @@ async def call_qwen(
     _apply_qwen_options(payload, enable_thinking)
 
     async with httpx.AsyncClient(timeout=300.0) as client:
-        resp = await client.post(url, json=payload, headers=headers)
+        resp = await _post_with_retry(client, url, headers, payload, op="call_qwen")
         if resp.status_code != 200:
             logger.error("LLM API error %d: %s", resp.status_code, resp.text[:500])
             raise HTTPException(
@@ -183,7 +222,7 @@ async def stream_messages(
 async def call_llm(
     messages: list[dict],
     tools: list[dict] | None = None,
-    timeout: float = 120.0,
+    timeout: float = 600.0,
     enable_thinking: bool | None = None,
 ) -> dict:
     """支持完整消息历史 + 工具定义的 LLM 调用。
@@ -209,13 +248,29 @@ async def call_llm(
         payload["tools"] = tools
         payload["tool_choice"] = "auto"
 
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        resp = await client.post(url, json=payload, headers=headers)
-        if resp.status_code != 200:
-            logger.error("LLM API error %d: %s", resp.status_code, resp.text[:500])
-            raise HTTPException(
-                status_code=502,
-                detail=f"LLM API 错误 ({resp.status_code}): {resp.text[:200]}",
-            )
-        data = resp.json()
-        return data["choices"][0]["message"]
+    started = time.monotonic()
+    n_msgs = len(messages)
+    n_tools = len(tools) if tools else 0
+    logger.info("call_llm start: messages=%d tools=%d timeout=%.0fs", n_msgs, n_tools, timeout)
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await _post_with_retry(client, url, headers, payload, op="call_llm")
+            elapsed = time.monotonic() - started
+            if resp.status_code != 200:
+                logger.error(
+                    "call_llm failed in %.1fs: status=%d body=%s",
+                    elapsed, resp.status_code, resp.text[:500],
+                )
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"LLM API 错误 ({resp.status_code}): {resp.text[:200]}",
+                )
+            data = resp.json()
+            logger.info("call_llm done in %.1fs", elapsed)
+            return data["choices"][0]["message"]
+    except httpx.TimeoutException as e:
+        logger.error(
+            "call_llm timeout after %.1fs (limit=%.0fs): %s",
+            time.monotonic() - started, timeout, type(e).__name__,
+        )
+        raise

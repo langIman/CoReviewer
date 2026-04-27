@@ -39,6 +39,7 @@ from backend.models.wiki_models import (
     WikiPage,
 )
 from backend.services.module_service import generate_module_split
+from backend.services.progress_reporter import get_reporter
 from backend.services.summary_service import generate_hierarchical_summary
 from backend.services.wiki.article_generator import (
     generate_chapter_page,
@@ -97,7 +98,8 @@ async def generate_wiki(project_name: str | None = None) -> WikiDocument:
 
     # 3. 模块划分
     logger.info("Running module_split for: %s", project_name)
-    split_result = await generate_module_split()
+    async with get_reporter().track("module_split", None):
+        split_result = await generate_module_split()
     raw_modules: list[dict] = split_result.get("modules") or []
     if not raw_modules:
         raise HTTPException(status_code=500, detail="module_split returned empty result")
@@ -120,14 +122,15 @@ async def generate_wiki(project_name: str | None = None) -> WikiDocument:
     # 5. Outliner
     logger.info("Generating outline")
     module_summaries_list = [m.get("description", "") for m in modules]
-    outline: OutlinePlan = await generate_outline(
-        project_name=project_name,
-        modules=modules,
-        module_summaries=module_summaries_list,
-        project_summary=project_summary,
-        ast_model=ast_model,
-        doc_bundle=doc_bundle,
-    )
+    async with get_reporter().track("outline", None):
+        outline: OutlinePlan = await generate_outline(
+            project_name=project_name,
+            modules=modules,
+            module_summaries=module_summaries_list,
+            project_summary=project_summary,
+            ast_model=ast_model,
+            doc_bundle=doc_bundle,
+        )
     logger.info(
         "Outline ready: chapters=%d topics=%d",
         len(outline.chapters), len(outline.topics),
@@ -152,45 +155,51 @@ async def generate_wiki(project_name: str | None = None) -> WikiDocument:
 
     async def _module_task(i: int, m: dict) -> WikiPage:
         async with sem:
-            logger.info("Generating module page: %s (%s)", module_id(i), m.get("name"))
-            return await generate_module_page(
-                index=i,
-                module=m,
-                project_files=project_files,
-                ast_model=ast_model,
-                path_to_module_index=path_to_module_index,
-                doc_bundle=doc_bundle,
-                allowed_page_ids=allowed_page_ids_modules_only,
-            )
+            item = f"{m.get('name')} ({module_id(i)})"  # 防同名模块碰撞
+            async with get_reporter().track("module_page", item):
+                logger.info("Generating module page: %s (%s)", module_id(i), m.get("name"))
+                return await generate_module_page(
+                    index=i,
+                    module=m,
+                    project_files=project_files,
+                    ast_model=ast_model,
+                    path_to_module_index=path_to_module_index,
+                    doc_bundle=doc_bundle,
+                    allowed_page_ids=allowed_page_ids_modules_only,
+                )
 
     async def _chapter_task(i: int, spec) -> WikiPage:
         async with sem:
-            logger.info("Generating chapter page: %s (%s)", chapter_id(i), spec.title)
-            return await generate_chapter_page(
-                index=i,
-                spec=spec,
-                project_name=project_name,
-                project_summary=project_summary,
-                modules=modules,
-                module_summaries=module_summaries_list,
-                ast_model=ast_model,
-                doc_bundle=doc_bundle,
-                allowed_page_ids=allowed_page_ids,
-            )
+            async with get_reporter().track("chapter_page", spec.title):
+                logger.info("Generating chapter page: %s (%s)", chapter_id(i), spec.title)
+                return await generate_chapter_page(
+                    index=i,
+                    spec=spec,
+                    project_name=project_name,
+                    project_summary=project_summary,
+                    modules=modules,
+                    module_summaries=module_summaries_list,
+                    project_files=project_files,
+                    ast_model=ast_model,
+                    doc_bundle=doc_bundle,
+                    allowed_page_ids=allowed_page_ids,
+                )
 
     async def _topic_task(i: int, spec) -> WikiPage:
         async with sem:
-            logger.info("Generating topic page: %s (%s)", topic_id(i), spec.title)
-            return await generate_topic_page(
-                index=i,
-                spec=spec,
-                project_name=project_name,
-                project_summary=project_summary,
-                modules=modules,
-                module_summaries=module_summaries_list,
-                ast_model=ast_model,
-                allowed_page_ids=allowed_page_ids,
-            )
+            async with get_reporter().track("topic_page", spec.title):
+                logger.info("Generating topic page: %s (%s)", topic_id(i), spec.title)
+                return await generate_topic_page(
+                    index=i,
+                    spec=spec,
+                    project_name=project_name,
+                    project_summary=project_summary,
+                    modules=modules,
+                    module_summaries=module_summaries_list,
+                    project_files=project_files,
+                    ast_model=ast_model,
+                    allowed_page_ids=allowed_page_ids,
+                )
 
     all_tasks = [
         *(_module_task(i, m) for i, m in enumerate(modules)),
@@ -210,18 +219,19 @@ async def generate_wiki(project_name: str | None = None) -> WikiDocument:
 
     # 8. 概览页（所有子页生成完）
     logger.info("Generating overview page")
-    overview_page = await generate_overview_page(
-        project_name=project_name,
-        modules=modules,
-        module_summaries=module_summaries_list,
-        chapter_pages=chapter_pages,
-        topic_pages=topic_pages,
-        project_summary=project_summary,
-        ast_model=ast_model,
-        path_to_module_index=path_to_module_index,
-        doc_bundle=doc_bundle,
-        allowed_page_ids=allowed_page_ids,
-    )
+    async with get_reporter().track("overview", None):
+        overview_page = await generate_overview_page(
+            project_name=project_name,
+            modules=modules,
+            module_summaries=module_summaries_list,
+            chapter_pages=chapter_pages,
+            topic_pages=topic_pages,
+            project_summary=project_summary,
+            ast_model=ast_model,
+            path_to_module_index=path_to_module_index,
+            doc_bundle=doc_bundle,
+            allowed_page_ids=allowed_page_ids,
+        )
 
     # 9. 分类页（纯分组，无内容）
     category_pages = [

@@ -94,6 +94,14 @@ def init_db() -> None:
         )
     """)
     conn.execute("""
+        CREATE TABLE IF NOT EXISTS project_files (
+            project_name TEXT NOT NULL,
+            path TEXT NOT NULL,
+            content TEXT NOT NULL,
+            PRIMARY KEY (project_name, path)
+        )
+    """)
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS qa_conversations (
             id           TEXT PRIMARY KEY,
             project_name TEXT NOT NULL,

@@ -13,10 +13,17 @@ interface Props {
   content: string
 }
 
+const PAGE_ID_RE = /^(?:overview|cat_(?:architecture|modules|topics)|module_\d+|chapter_\d+|topic_\d+)$/
+
+function stripLeadingNumber(t: string): string {
+  return t.replace(/^\s*\d+\s*[.、:：)）]\s*/, '').trim()
+}
+
 export default function MarkdownRenderer({ content }: Props) {
   const navigateToPage = useWikiStore((s) => s.navigateToPage)
   const openCodeDrawer = useWikiStore((s) => s.openCodeDrawer)
   const openCodeDrawerWithRef = useWikiStore((s) => s.openCodeDrawerWithRef)
+  const wiki = useWikiStore((s) => s.wiki)
   const qaRefs = useContext(QACodeRefsContext)
 
   return (
@@ -110,8 +117,32 @@ export default function MarkdownRenderer({ content }: Props) {
           },
           code({ className, children, ...rest }) {
             const match = /language-(\w+)/.exec(className || '')
-            const isBlock = Boolean(match) || String(children).includes('\n')
+            const raw = String(children)
+            const isBlock = Boolean(match) || raw.includes('\n')
             if (!isBlock) {
+              // LLM 在正文里偶尔会以 inline code 形式直接写出页面 id
+              // (e.g. `module_4`, `chapter_2`)，把它替换成真实标题并接成可点链接。
+              if (wiki && PAGE_ID_RE.test(raw.trim())) {
+                const target = wiki.pages.find((p) => p.id === raw.trim())
+                if (target && target.type !== 'category') {
+                  const label =
+                    target.type === 'chapter'
+                      ? stripLeadingNumber(target.title)
+                      : target.title
+                  return (
+                    <a
+                      href="#"
+                      className="text-blue-600 dark:text-blue-400 hover:underline font-medium"
+                      onClick={(e) => {
+                        e.preventDefault()
+                        void navigateToPage(target.id)
+                      }}
+                    >
+                      {label}
+                    </a>
+                  )
+                }
+              }
               return (
                 <code
                   className="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-800 rounded text-[13px] font-mono text-rose-600 dark:text-rose-300"
