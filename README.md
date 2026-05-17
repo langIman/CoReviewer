@@ -127,7 +127,7 @@ npm run dev
 ## 项目结构
 
 ```
-CoReviewer/
+CoReader/
 ├─ backend/
 │  ├─ controllers/         # FastAPI 路由（file / wiki / qa / quiz）
 │  ├─ services/
