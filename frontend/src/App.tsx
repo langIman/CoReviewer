@@ -3,6 +3,41 @@ import { useWikiStore } from './store/useWikiStore'
 import UploadView from './components/Upload/UploadView'
 import WikiLayout from './components/Wiki/WikiLayout'
 
+/**
+ * 项目曾经叫 CoReviewer，后改名 CoReader，localStorage key 前缀也跟着改了。
+ * 老用户浏览器里残留的 `coreviewer.*` 数据现在没人读，导致"刷新后 wiki/设置
+ * 全丢，回到上传初始页"的诡异 bug。
+ *
+ * 这里做一次性数据迁移：把 coreviewer.* / coreviewer-* 复制到 coreader.* /
+ * coreader-* 然后删除旧 key。已迁移过的浏览器走这里是 no-op（旧 key 不存在）。
+ */
+function migrateLegacyStorageKeys(): void {
+  try {
+    const renames: Array<[string, string]> = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i)
+      if (!k) continue
+      if (k.startsWith('coreviewer.')) renames.push([k, 'coreader.' + k.slice('coreviewer.'.length)])
+      else if (k.startsWith('coreviewer-')) renames.push([k, 'coreader-' + k.slice('coreviewer-'.length)])
+    }
+    if (renames.length === 0) return
+    for (const [oldKey, newKey] of renames) {
+      const v = localStorage.getItem(oldKey)
+      if (v === null) continue
+      // 不覆盖已有值（新前缀已有数据时以它为准）
+      if (localStorage.getItem(newKey) === null) localStorage.setItem(newKey, v)
+      localStorage.removeItem(oldKey)
+    }
+    console.info('[migrateLegacyStorageKeys] 已迁移', renames.length, '个旧 key:', renames)
+  } catch (e) {
+    console.warn('[migrateLegacyStorageKeys] 迁移失败（不影响功能）:', e)
+  }
+}
+
+// 必须在 useWikiStore 首次读 localStorage 之前跑。模块顶层执行，先于
+// React 渲染、先于 store 的 loadNavWidth() 等同步读取。
+migrateLegacyStorageKeys()
+
 export default function App() {
   const wiki = useWikiStore((s) => s.wiki)
   const rehydrating = useWikiStore((s) => s.rehydrating)
