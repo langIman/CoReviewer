@@ -36,5 +36,8 @@ Thumbs.db
 TestProject/
 test/.cache/
 
+# 本地暂存（个人文件，不入库）
+tempWorkplace/
+
 # Eval 报告（运行时生成）
 eval/report/*.json
