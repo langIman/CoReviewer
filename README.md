@@ -69,10 +69,14 @@
 
 | | |
 |---|---|
-| **AST 优先，不是 LLM 盲猜** | tree-sitter 多语言解析（Python / Rust / Java）→ 符号、调用边、入口点抽取 → SQLite 持久化 |
-| **统一的 Agent Loop** | 一套循环驱动 Wiki / QA / Quiz 三个能力，工具系统可扩展，自动压缩长上下文 |
-| **OpenAI 协议兼容** | 接 Qwen / Kimi / MiniMax / 任何 OpenAI 兼容网关，摘要类任务可走更便宜的 fast 模型 |
-| **流式优先** | SSE 实时输出 token、工具调用、压缩事件，前端 Zustand 全程订阅 |
+| **AST 优先，不是 LLM 盲猜** | tree-sitter 多语言解析（Python / Rust / Java）→ 函数符号 / 调用边 / 入口点抽取 → SQLite 持久化。LLM 通过工具查这个结构化数据，**而不是把整个项目塞进 prompt**——这让大项目也能精准回答，不受上下文窗口限制 |
+| **统一的 Agent Loop + Skill 系统** | 一套带 7 个工具的 Agent 循环（`get_modules` / `get_summaries` / `get_symbols` / `get_call_edges` / `search_code` / `search_symbols` / `get_file_content` + `spawn_agent`）同时驱动 Wiki / QA / Quiz 三个能力；复杂任务（如"按业务职责拆模块"）封装成 **Skill** 复用，包含独立 system prompt + 工具子集 |
+| **两档 QA：快回答 vs 深探索** | 快速模式：单次 LLM 调用 + 预拼项目上下文，**秒回**适合"这变量啥意思"。深度模式：完整 Agent Loop + 7 个工具 + 自动压缩 + 最多 30 轮迭代，适合"这流程怎么走"。两种成本档让用户按需选，**便宜问题不浪费 token，难问题不偷工减料** |
+| **OpenAI 协议兼容 + 模型分层** | 接 Qwen / Kimi / MiniMax / 任何 OpenAI 兼容网关，**换模型只改一个环境变量**。摘要类轻量任务走 `QWEN_FAST_MODEL`，Agent 主循环走强模型，整套 wiki 生成成本压低近 3 倍 |
+| **流式优先，过程透明** | SSE 实时推送 token / 工具调用 / 工具结果 / 压缩事件 / 完成事件，前端**工具时间线**把 Agent 思考过程逐步展开。每个工具调用看得到参数和返回结果摘要——**不是干等黑盒**，用户能看到当前 LLM 正在做啥、跑到哪了 |
+| **生产级容错（踩过坑的那种）** | LLM 网关每次 90s 主动 kill + 退避重试；工具返回超 30KB 自动截断（防止 `get_call_edges` 误返回全图把上下文撑爆）；长会话 token 接近 budget 自动压缩历史；Wiki 任务后台异步 + `task_id` 持久化，**浏览器刷新也能继续看进度**而不是从头再来 |
+| **代码即引用，点击就跳转** | Wiki 每段叙述都带源码引用 `<code_ref:文件:行号:函数>`，**点击弹出侧边代码窗口高亮目标行**。引用由 Agent 在生成时自己挑（"这段话依据哪几行代码"），不是事后正则瞎匹配——保证了引用和叙述的真实对应 |
+| **现代前端栈，体验细抠** | React 19 + TypeScript + Vite 8 + Tailwind 4 + Zustand。多 store 按域拆分（Wiki/QA/Quiz/Layout），整页 ErrorBoundary 拦截任何渲染异常，Wiki/QA/Quiz **可拖拽并排同屏**，localStorage 持久化导航宽度、主题、深度模式开关等所有用户偏好 |
 
 ---
 
