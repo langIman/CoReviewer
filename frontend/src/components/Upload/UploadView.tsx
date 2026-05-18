@@ -237,7 +237,7 @@ export default function UploadView() {
     >
       <header className="flex items-center justify-between px-6 py-3 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
         <h1 className="text-lg font-semibold text-gray-800 dark:text-gray-100">
-          CoReader · 代码知识库
+          CoReader · 代码阅读助手
         </h1>
         <ThemeToggle />
       </header>
@@ -247,7 +247,7 @@ export default function UploadView() {
           <div className="text-center">
             <div className="text-5xl mb-3">📚</div>
             <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-2">
-              上传 Python 项目
+              上传代码项目
             </h2>
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
               拖入项目文件夹或点击下方按钮选择；上传后自动生成 Wiki 文档
